@@ -4,3 +4,41 @@ stack = "BEST_EFFORT_FALLBACK"
 
 [nix]
 channel = "stable-25_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Build IPA (Release)"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Build IPA (Debug)"
+
+[[workflows.workflow]]
+name = "Build IPA (Release)"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash BuildTools/build_ipa.sh --release"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Build IPA (Debug)"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash BuildTools/build_ipa.sh"
+
+[workflows.workflow.metadata]
+outputType = "console"

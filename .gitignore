@@ -1,0 +1,49 @@
+## Xcode
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Build
+build/
+Build/
+dist/
+
+## CocoaPods
+Pods/
+*.xcworkspace
+!*.xcodeproj/*.xcworkspace
+Podfile.lock
+
+## Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+## macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+## Replit
+.local/
+.cache/
+.agents/
+attached_assets/
