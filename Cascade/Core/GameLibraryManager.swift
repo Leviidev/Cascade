@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 // MARK: - Game Entry
 
-public struct GameEntry: Identifiable, Codable, Hashable {
+public struct GameEntry: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     var title: String
     var url: URL
@@ -156,7 +156,6 @@ public final class GameLibraryManager: ObservableObject {
             "SLUS-21315": "Metal Gear Solid 3: Snake Eater",
             "SLUS-20488": "Metal Gear Solid 2: Sons of Liberty",
             "SLUS-20063": "Devil May Cry",
-            "SCES-50360": "Ico",
         ]
         return lookup[id.uppercased()]
     }
