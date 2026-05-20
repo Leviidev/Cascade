@@ -60,6 +60,68 @@ public final class EmotionEngine {
         }
     }
 
+    // MARK: - JIT Block Execution
+
+    /// Execute a pre-compiled block of decoded instructions (JIT mode).
+    func executeBlock(_ block: CompiledBlock) {
+        for decoded in block.instructions {
+            if inDelaySlot {
+                pc = nextPC
+                inDelaySlot = false
+            } else {
+                pc &+= 4
+            }
+            dispatchDecoded(decoded)
+            cycles &+= 1
+        }
+    }
+
+    /// Fast dispatch using a pre-decoded instruction (skips fetch + decode).
+    private func dispatchDecoded(_ d: DecodedInstruction) {
+        switch d.op {
+        case 0x00: decodeSpecial(funct: d.funct, rs: d.rs, rt: d.rt, rd: d.rd, shamt: d.shamt)
+        case 0x01: decodeRegImm(rt: d.rt, rs: d.rs, offset: d.imm16)
+        case 0x02: executeJ(imm26: d.imm26)
+        case 0x03: executeJAL(imm26: d.imm26)
+        case 0x04: executeBEQ(rs: d.rs, rt: d.rt, offset: d.imm16)
+        case 0x05: executeBNE(rs: d.rs, rt: d.rt, offset: d.imm16)
+        case 0x06: executeBLEZ(rs: d.rs, offset: d.imm16)
+        case 0x07: executeBGTZ(rs: d.rs, offset: d.imm16)
+        case 0x08: executeADDI(rt: d.rt, rs: d.rs, imm: d.imm16)
+        case 0x09: executeADDIU(rt: d.rt, rs: d.rs, imm: d.imm16)
+        case 0x0A: executeSLTI(rt: d.rt, rs: d.rs, imm: d.imm16)
+        case 0x0B: executeSLTIU(rt: d.rt, rs: d.rs, imm: d.imm16)
+        case 0x0C: executeANDI(rt: d.rt, rs: d.rs, imm: UInt16(d.raw & 0xFFFF))
+        case 0x0D: executeORI(rt: d.rt, rs: d.rs, imm: UInt16(d.raw & 0xFFFF))
+        case 0x0E: executeXORI(rt: d.rt, rs: d.rs, imm: UInt16(d.raw & 0xFFFF))
+        case 0x0F: executeLUI(rt: d.rt, imm: UInt16(d.raw & 0xFFFF))
+        case 0x10: decodeCOP0(rs: d.rs, rt: d.rt, rd: d.rd, instruction: d.raw)
+        case 0x11: decodeCOP1(rs: d.rs, rt: d.rt, rd: d.rd, funct: d.funct, instruction: d.raw)
+        case 0x14: executeBEQL(rs: d.rs, rt: d.rt, offset: d.imm16)
+        case 0x15: executeBNEL(rs: d.rs, rt: d.rt, offset: d.imm16)
+        case 0x18: executeDDIVI(rt: d.rt, rs: d.rs, imm: d.imm16)
+        case 0x19: executeDADDIU(rt: d.rt, rs: d.rs, imm: d.imm16)
+        case 0x1C: decodeMMI(instruction: d.raw)
+        case 0x1E: executeLQ(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x1F: executeSQ(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x20: executeLB(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x21: executeLH(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x22: executeLWL(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x23: executeLW(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x24: executeLBU(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x25: executeLHU(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x26: executeLWR(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x27: executeLWU(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x28: executeSB(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x29: executeSH(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x2B: executeSW(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x2F: executeSD(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x37: executeLD(rt: d.rt, base: d.rs, offset: d.imm16)
+        case 0x3F: executeSD(rt: d.rt, base: d.rs, offset: d.imm16)
+        default:   handleUnknownInstruction(op: d.op)
+        }
+    }
+
     private func executeOne() {
         guard let bus = bus else { return }
         let instruction = bus.read32(address: pc)

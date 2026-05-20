@@ -18,6 +18,13 @@ public final class PS2Emulator {
     let cdvd:  CDVD
     let pad:   PadManager
 
+    // MARK: - JIT
+
+    let jitCache = JITBlockCache()
+    var executionMode: ExecutionMode = .jit {
+        didSet { if executionMode == .jitless { jitCache.flush() } }
+    }
+
     // MARK: - State
 
     enum State { case off, paused, running }
@@ -56,7 +63,6 @@ public final class PS2Emulator {
         ee    = EmotionEngine(bus: bus)
         iop   = IOProcessor()
 
-        // Wire up cross-references
         bus.gs    = gs
         bus.dmac  = dmac
         bus.intc  = intc
@@ -78,7 +84,6 @@ public final class PS2Emulator {
             throw EmulatorError.biosInvalid("BIOS file is too small or corrupted")
         }
         biosLoaded = true
-        // Also load BIOS into IOP RAM mirror
         let iopBiosSize = min(data.count, iop.ram.count)
         data.copyBytes(to: &iop.ram, count: iopBiosSize)
     }
@@ -113,6 +118,7 @@ public final class PS2Emulator {
         state = .off
         ee.reset()
         iop.reset()
+        jitCache.flush()
     }
 
     // MARK: - Run Loop
@@ -129,7 +135,6 @@ public final class PS2Emulator {
                 lastTime = now
                 executeFrame()
             } else {
-                // Sleep for ~half a frame to reduce spin-wait overhead
                 let sleepNs = UInt32((nsPerFrame - elapsed) / 2)
                 usleep(sleepNs / 1000)
             }
@@ -137,29 +142,53 @@ public final class PS2Emulator {
     }
 
     private func executeFrame() {
-        // Step EE CPU
-        ee.step(count: eePerFrame)
+        switch executionMode {
+        case .jit:     executeFrameJIT()
+        case .jitless: executeFrameInterpreter()
+        }
 
-        // Step IOP CPU (and SPU2, via IOP.step)
         iop.step(count: iopPerFrame)
-
-        // Step DMAC
         dmac.step()
-
-        // Step EE timers
         for _ in 0..<(eePerFrame / 256) { timer.tick() }
-
-        // Signal VBlank to GS
         signalVBlank()
 
-        // Deliver frame
         let frame = gs.getFrameBuffer()
         onFrameReady?(frame, gs.outputWidth, gs.outputHeight)
     }
 
+    // MARK: - JIT Execution (block recompiler)
+
+    private func executeFrameJIT() {
+        var remaining = eePerFrame
+
+        while remaining > 0 {
+            let pc = ee.pc
+
+            // Look up a compiled block from the cache
+            if let block = jitCache.block(for: pc) {
+                ee.executeBlock(block)
+                remaining -= block.instructions.count
+            } else {
+                // Compile a new block and cache it
+                let block = BlockCompiler.compile(at: pc, bus: bus)
+                jitCache.insert(block)
+                ee.executeBlock(block)
+                remaining -= block.instructions.count
+            }
+        }
+    }
+
+    // MARK: - Interpreter Execution (JitLess)
+
+    private func executeFrameInterpreter() {
+        ee.step(count: eePerFrame)
+    }
+
+    // MARK: - VBlank
+
     private func signalVBlank() {
-        intc.assertIRQ(bit: 2)   // VBLANK-IN
-        gs.csr |= (1 << 3)       // VBlank flag in GS CSR
+        intc.assertIRQ(bit: 2)
+        gs.csr |= (1 << 3)
     }
 
     // MARK: - Save States
@@ -186,6 +215,8 @@ public final class PS2Emulator {
         iop.gpr = s.iopGpr
         s.ram.copyBytes(to: &bus.ram, count: min(s.ram.count, bus.ram.count))
         s.iopRam.copyBytes(to: &iop.ram, count: min(s.iopRam.count, iop.ram.count))
+        // Flush JIT cache after state load — code may have changed
+        jitCache.flush()
     }
 }
 
@@ -209,8 +240,8 @@ enum EmulatorError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .biosNotLoaded:      return "No PS2 BIOS is loaded. Please import a BIOS file first."
-        case .biosInvalid(let m): return "Invalid BIOS: \(m)"
+        case .biosNotLoaded:         return "No PS2 BIOS is loaded. Please import a BIOS file first."
+        case .biosInvalid(let m):    return "Invalid BIOS: \(m)"
         case .discLoadFailed(let m): return "Failed to load disc: \(m)"
         }
     }

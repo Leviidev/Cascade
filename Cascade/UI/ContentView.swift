@@ -11,10 +11,13 @@ struct ContentView: View {
         Group {
             if emulatorState.status == .running || emulatorState.status == .paused {
                 EmulatorView()
+                    .transition(.opacity)
             } else {
                 mainTabView
+                    .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: emulatorState.status)
         .alert("Error", isPresented: $emulatorState.showError) {
             Button("OK") { emulatorState.showError = false }
         } message: {

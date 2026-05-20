@@ -15,6 +15,17 @@ public final class EmulatorState: ObservableObject {
     @Published var biosLoaded: Bool = false
     @Published var errorMessage: String?
     @Published var showError: Bool = false
+    @Published var jitBlockCount: Int = 0
+    @Published var jitHitRate: Double = 0
+
+    // MARK: - Execution Mode
+
+    var executionMode: ExecutionMode = .jit {
+        didSet {
+            emulator.executionMode = executionMode
+            UserDefaults.standard.set(executionMode.rawValue, forKey: "executionMode")
+        }
+    }
 
     // MARK: - Emulator
 
@@ -34,6 +45,10 @@ public final class EmulatorState: ObservableObject {
     // MARK: - Init
 
     init() {
+        let savedMode = UserDefaults.standard.string(forKey: "executionMode") ?? ExecutionMode.jit.rawValue
+        executionMode = ExecutionMode(rawValue: savedMode) ?? .jit
+        emulator.executionMode = executionMode
+
         checkBIOS()
         setupFrameCallback()
     }
@@ -157,7 +172,7 @@ public final class EmulatorState: ObservableObject {
         return statesDir.appendingPathComponent("slot\(slot).cstate")
     }
 
-    // MARK: - FPS Counter
+    // MARK: - FPS + JIT Stats Counter
 
     private func startFPSCounter() {
         fpsTimer?.invalidate()
@@ -166,6 +181,8 @@ public final class EmulatorState: ObservableObject {
             Task { @MainActor in
                 self.fps = Double(self.frameCount)
                 self.frameCount = 0
+                self.jitBlockCount = self.emulator.jitCache.blockCount
+                self.jitHitRate = self.emulator.jitCache.hitRate
             }
         }
     }

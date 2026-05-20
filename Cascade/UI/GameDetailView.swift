@@ -9,35 +9,35 @@ struct GameDetailView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Blurred background art
+                coverColor.opacity(0.18).ignoresSafeArea()
                 LinearGradient(
-                    colors: [coverColor.opacity(0.35), Color(.systemBackground)],
-                    startPoint: .top, endPoint: .center
+                    colors: [coverColor.opacity(0.3), Color(.systemBackground).opacity(0.95)],
+                    startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.45)
                 )
                 .ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 28) {
-                        // Cover + metadata
+                    VStack(spacing: 24) {
                         headerSection
-
-                        // Play button
                         playSection
-
-                        // Info grid
                         infoGrid
-
-                        // File info
+                        executionBadge
                         fileInfoSection
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 12)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 16)
                     .padding(.bottom, 40)
                 }
             }
             .navigationTitle(game.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: { library.toggleFavorite(game) }) {
+                        Image(systemName: game.isFavorite ? "heart.fill" : "heart")
+                            .foregroundStyle(game.isFavorite ? .red : .secondary)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }
@@ -45,49 +45,57 @@ struct GameDetailView: View {
         }
     }
 
-    // MARK: - Sections
+    // MARK: - Header
 
     private var headerSection: some View {
-        VStack(spacing: 16) {
-            // Cover art
+        VStack(spacing: 18) {
             ZStack {
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(cornerRadius: 22)
                     .fill(LinearGradient(
-                        colors: [coverColor.opacity(0.8), coverColor.opacity(0.5)],
+                        colors: [coverColor.opacity(0.85), coverColor.opacity(0.5)],
                         startPoint: .topLeading, endPoint: .bottomTrailing
                     ))
-                    .frame(width: 180, height: 240)
-                    .shadow(color: coverColor.opacity(0.5), radius: 20, y: 10)
+                    .frame(width: 170, height: 226)
+                    .shadow(color: coverColor.opacity(0.55), radius: 24, y: 12)
 
-                VStack(spacing: 12) {
+                VStack(spacing: 14) {
                     Image(systemName: "opticaldisc.fill")
-                        .font(.system(size: 48))
-                        .foregroundColor(.white.opacity(0.9))
-                    Text(game.discID.isEmpty ? "PS2" : game.discID)
-                        .font(.caption.monospaced())
-                        .foregroundColor(.white.opacity(0.7))
+                        .font(.system(size: 52))
+                        .foregroundColor(.white.opacity(0.92))
+                    if !game.discID.isEmpty {
+                        Text(game.discID)
+                            .font(.caption.monospaced().bold())
+                            .foregroundColor(.white.opacity(0.75))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(.black.opacity(0.25), in: Capsule())
+                    }
                 }
             }
 
-            VStack(spacing: 4) {
+            VStack(spacing: 6) {
                 Text(game.title)
-                    .font(.title2.bold())
+                    .font(.title3.bold())
                     .multilineTextAlignment(.center)
 
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     Label(game.region, systemImage: "globe")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     if game.isFavorite {
-                        Image(systemName: "heart.fill").foregroundColor(.red)
+                        Image(systemName: "heart.fill")
+                            .font(.subheadline)
+                            .foregroundColor(.red)
                     }
                 }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
             }
         }
     }
 
+    // MARK: - Play
+
     private var playSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             Button(action: {
                 dismiss()
                 emulatorState.launch(game: game)
@@ -95,8 +103,7 @@ struct GameDetailView: View {
             }) {
                 HStack(spacing: 10) {
                     if emulatorState.status == .loading {
-                        ProgressView()
-                            .tint(.white)
+                        ProgressView().tint(.white)
                     } else {
                         Image(systemName: "play.fill")
                     }
@@ -106,38 +113,70 @@ struct GameDetailView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(
-                    LinearGradient(colors: [Color.cascadeBlue, Color.cascadeBlue.opacity(0.8)],
-                                   startPoint: .leading, endPoint: .trailing)
+                    LinearGradient(
+                        colors: [Color.cascadeBlue, Color.cascadeBlue.opacity(0.75)],
+                        startPoint: .leading, endPoint: .trailing
+                    )
                 )
                 .foregroundColor(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
-                .shadow(color: Color.cascadeBlue.opacity(0.4), radius: 10, y: 5)
+                .shadow(color: Color.cascadeBlue.opacity(0.45), radius: 12, y: 6)
             }
-            .disabled(emulatorState.status == .loading)
+            .disabled(emulatorState.status == .loading || !emulatorState.biosLoaded)
 
             if !emulatorState.biosLoaded {
-                Label("BIOS required — go to Settings to import", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundColor(.orange)
-                    .multilineTextAlignment(.center)
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text("BIOS required — import it in Settings")
+                }
+                .font(.caption)
+                .foregroundColor(.orange)
+                .multilineTextAlignment(.center)
             }
         }
     }
 
+    // MARK: - Info Grid
+
     private var infoGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            infoCard(title: "Added", value: game.addedDate.formatted(.dateTime.month().day().year()))
-            infoCard(title: "Last Played", value: game.lastPlayed.map { $0.formatted(.relative(presentation: .named)) } ?? "Never")
-            infoCard(title: "Play Time", value: formatDuration(game.totalPlayTime))
-            infoCard(title: "Disc ID", value: game.discID.isEmpty ? "Unknown" : game.discID)
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            infoCard(
+                icon: "calendar",
+                iconColor: .cascadeBlue,
+                title: "Added",
+                value: game.addedDate.formatted(.dateTime.month().day().year())
+            )
+            infoCard(
+                icon: "clock.fill",
+                iconColor: .purple,
+                title: "Last Played",
+                value: game.lastPlayed.map { $0.formatted(.relative(presentation: .named)) } ?? "Never"
+            )
+            infoCard(
+                icon: "timer",
+                iconColor: .green,
+                title: "Play Time",
+                value: formatDuration(game.totalPlayTime)
+            )
+            infoCard(
+                icon: "barcode",
+                iconColor: .orange,
+                title: "Disc ID",
+                value: game.discID.isEmpty ? "Unknown" : game.discID
+            )
         }
     }
 
-    private func infoCard(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private func infoCard(icon: String, iconColor: Color, title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption.bold())
+                    .foregroundStyle(iconColor)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Text(value)
                 .font(.subheadline.bold())
                 .lineLimit(2)
@@ -148,6 +187,30 @@ struct GameDetailView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1)))
     }
 
+    // MARK: - Execution Badge
+
+    private var executionBadge: some View {
+        let mode = emulatorState.executionMode
+        return HStack(spacing: 10) {
+            Image(systemName: mode.systemImage)
+                .font(.subheadline.bold())
+                .foregroundStyle(Color.cascadeBlue)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Running in \(mode.displayName)")
+                    .font(.subheadline.bold())
+                Text(mode == .jit ? "Block recompiler enabled" : "Pure interpreter mode")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(Color.cascadeBlue.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.cascadeBlue.opacity(0.2), lineWidth: 1))
+    }
+
+    // MARK: - File Info
+
     private var fileInfoSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("File")
@@ -156,8 +219,16 @@ struct GameDetailView: View {
                 .textCase(.uppercase)
                 .tracking(1)
 
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(.tertiarySystemFill))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "doc.fill")
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
                     Text(game.url.lastPathComponent)
                         .font(.subheadline.bold())
                         .lineLimit(1)
@@ -166,8 +237,6 @@ struct GameDetailView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Image(systemName: "doc.fill")
-                    .foregroundStyle(.secondary)
             }
             .padding(14)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))

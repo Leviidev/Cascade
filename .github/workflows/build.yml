@@ -1,0 +1,87 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: Build configuration
+        required: true
+        default: Release
+        type: choice
+        options: [Release, Debug]
+
+jobs:
+  build:
+    name: Build ${{ matrix.configuration }} IPA
+    runs-on: macos-15
+    strategy:
+      matrix:
+        configuration: [Release, Debug]
+      fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install xcpretty
+        run: gem install xcpretty --no-document
+
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: build/DerivedData
+          key: deriveddata-${{ matrix.configuration }}-${{ hashFiles('Cascade.xcodeproj/project.pbxproj') }}
+          restore-keys: |
+            deriveddata-${{ matrix.configuration }}-
+            deriveddata-
+
+      - name: Build IPA (${{ matrix.configuration }})
+        run: |
+          if [ "${{ matrix.configuration }}" = "Release" ]; then
+            bash BuildTools/build_ipa.sh --release
+          else
+            bash BuildTools/build_ipa.sh
+          fi
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cascade-${{ matrix.configuration }}-${{ github.sha }}
+          path: build/IPA/Cascade.ipa
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.configuration }}-${{ github.sha }}
+          path: build/DerivedData/Logs/
+          retention-days: 7
+
+  notify:
+    name: Build summary
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "## 🌊 Cascade Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Configuration | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Release | ${{ needs.build.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Debug   | ${{ needs.build.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
