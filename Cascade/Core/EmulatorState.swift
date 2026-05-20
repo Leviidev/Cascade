@@ -11,6 +11,7 @@ public final class EmulatorState: ObservableObject {
     @Published var status: Status = .idle
     @Published var fps: Double = 0
     @Published var currentGame: GameEntry?
+    @Published var lastPlayedGame: GameEntry?
     @Published var frameImage: UIImage?
     @Published var biosLoaded: Bool = false
     @Published var errorMessage: String?
@@ -36,10 +37,7 @@ public final class EmulatorState: ObservableObject {
     // MARK: - Status
 
     enum Status: Equatable {
-        case idle
-        case running
-        case paused
-        case loading
+        case idle, running, paused, loading
     }
 
     // MARK: - Init
@@ -48,14 +46,13 @@ public final class EmulatorState: ObservableObject {
         let savedMode = UserDefaults.standard.string(forKey: "executionMode") ?? ExecutionMode.jit.rawValue
         executionMode = ExecutionMode(rawValue: savedMode) ?? .jit
         emulator.executionMode = executionMode
-
         checkBIOS()
         setupFrameCallback()
     }
 
     private func setupFrameCallback() {
         emulator.onFrameReady = { [weak self] data, width, height in
-            guard let self = self else { return }
+            guard let self else { return }
             self.frameCount += 1
             if let image = UIImage.fromRGBA(data: data, width: width, height: height) {
                 DispatchQueue.main.async { self.frameImage = image }
@@ -111,6 +108,8 @@ public final class EmulatorState: ObservableObject {
                 }
                 try emulator.loadDisc(url: game.url)
                 currentGame = game
+                lastPlayedGame = game
+                UserDefaults.standard.set(game.id, forKey: "lastPlayedGameID")
                 status = .running
                 startFPSCounter()
                 emulator.start()
@@ -145,8 +144,7 @@ public final class EmulatorState: ObservableObject {
 
     func saveState(slot: Int) {
         guard let game = currentGame else { return }
-        let url = stateURL(game: game, slot: slot)
-        try? emulator.saveState(to: url)
+        try? emulator.saveState(to: stateURL(game: game, slot: slot))
     }
 
     func loadState(slot: Int) {
@@ -161,7 +159,13 @@ public final class EmulatorState: ObservableObject {
         return FileManager.default.fileExists(atPath: stateURL(game: game, slot: slot).path)
     }
 
-    private func stateURL(game: GameEntry, slot: Int) -> URL {
+    func stateDate(slot: Int) -> Date? {
+        guard let game = currentGame else { return nil }
+        let url = stateURL(game: game, slot: slot)
+        return (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
+    func stateURL(game: GameEntry, slot: Int) -> URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let statesDir = dir.appendingPathComponent("states/\(game.id)")
         try? FileManager.default.createDirectory(at: statesDir, withIntermediateDirectories: true)
@@ -173,12 +177,12 @@ public final class EmulatorState: ObservableObject {
     private func startFPSCounter() {
         fpsTimer?.invalidate()
         fpsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+            guard let self else { return }
             Task { @MainActor in
                 self.fps = Double(self.frameCount)
                 self.frameCount = 0
                 self.jitBlockCount = self.emulator.jitCache.blockCount
-                self.jitHitRate = self.emulator.jitCache.hitRate
+                self.jitHitRate   = self.emulator.jitCache.hitRate
             }
         }
     }
@@ -192,7 +196,7 @@ extension UIImage {
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
         guard let provider = CGDataProvider(data: data as CFData),
-              let cgImage = CGImage(
+              let cgImage  = CGImage(
                 width: width, height: height,
                 bitsPerComponent: 8, bitsPerPixel: 32,
                 bytesPerRow: width * 4,

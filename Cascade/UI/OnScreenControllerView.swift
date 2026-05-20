@@ -2,75 +2,97 @@ import SwiftUI
 
 // MARK: - On-Screen PS2 DualShock 2 Controller
 // iOS 26 "Liquid Glass" glassmorphism style
+// Supports both landscape and portrait orientations.
 
 struct OnScreenControllerView: View {
     @EnvironmentObject var emulatorState: EmulatorState
+    @AppStorage("controllerOpacity") private var opacity: Double = 0.8
 
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-            let btnSize: CGFloat = 46
-            let padSize: CGFloat = 110
+            let isPortrait = geo.size.height > geo.size.width
+            controllerLayout(geo: geo, portrait: isPortrait)
+        }
+        .opacity(opacity)
+    }
 
-            ZStack {
-                // ─── Left side ───────────────────────────────
-                // D-Pad
-                DPadView()
-                    .frame(width: padSize, height: padSize)
-                    .position(x: w * 0.18, y: h - 160)
+    @ViewBuilder
+    private func controllerLayout(geo: GeometryProxy, portrait: Bool) -> some View {
+        let w = geo.size.width
+        let h = geo.size.height
+        let btnSize: CGFloat  = 46
+        let padSize: CGFloat  = 110
 
-                // SELECT / START
-                HStack(spacing: 20) {
-                    SmallButton(label: "SELECT") {
-                        emulatorState.emulator.pad.pressButton(.select)
-                    } onRelease: {
-                        emulatorState.emulator.pad.releaseButton(.select)
-                    }
-                    SmallButton(label: "START") {
-                        emulatorState.emulator.pad.pressButton(.start)
-                    } onRelease: {
-                        emulatorState.emulator.pad.releaseButton(.start)
-                    }
+        // Position helpers
+        let dpadX    = portrait ? w * 0.20 : w * 0.18
+        let dpadY    = portrait ? h - 210  : h - 160
+        let faceX    = portrait ? w * 0.80 : w * 0.82
+        let faceY    = portrait ? h - 210  : h - 160
+        let centerY  = portrait ? h - 295  : h - 200
+        let l1Y      = portrait ? h - 390  : h - 310
+        let l2Y      = portrait ? h - 450  : h - 360
+        let r1Y      = l1Y
+        let r2Y      = l2Y
+        let lStickX  = portrait ? w * 0.28 : w * 0.30
+        let lStickY  = portrait ? h - 110  : h - 80
+        let rStickX  = portrait ? w * 0.72 : w * 0.70
+        let rStickY  = lStickY
+
+        ZStack {
+            // D-Pad
+            DPadView()
+                .frame(width: padSize, height: padSize)
+                .position(x: dpadX, y: dpadY)
+
+            // SELECT / START
+            HStack(spacing: portrait ? 30 : 20) {
+                SmallButton(label: "SELECT") {
+                    emulatorState.emulator.pad.pressButton(.select)
+                } onRelease: {
+                    emulatorState.emulator.pad.releaseButton(.select)
                 }
-                .position(x: w * 0.5, y: h - 200)
-
-                // ─── Right side ───────────────────────────────
-                // Face buttons (×, ○, △, □)
-                FaceButtonsView(size: btnSize)
-                    .frame(width: padSize, height: padSize)
-                    .position(x: w * 0.82, y: h - 160)
-
-                // ─── Shoulder buttons ─────────────────────────
-                ShoulderButton(label: "L1", action: { emulatorState.emulator.pad.pressButton(.l1) },
-                               release: { emulatorState.emulator.pad.releaseButton(.l1) })
-                    .position(x: w * 0.1, y: h - 310)
-
-                ShoulderButton(label: "L2", action: { emulatorState.emulator.pad.pressButton(.l2) },
-                               release: { emulatorState.emulator.pad.releaseButton(.l2) })
-                    .position(x: w * 0.1, y: h - 360)
-
-                ShoulderButton(label: "R1", action: { emulatorState.emulator.pad.pressButton(.r1) },
-                               release: { emulatorState.emulator.pad.releaseButton(.r1) })
-                    .position(x: w * 0.9, y: h - 310)
-
-                ShoulderButton(label: "R2", action: { emulatorState.emulator.pad.pressButton(.r2) },
-                               release: { emulatorState.emulator.pad.releaseButton(.r2) })
-                    .position(x: w * 0.9, y: h - 360)
-
-                // ─── Analog Sticks ────────────────────────────
-                AnalogStickView { x, y in
-                    emulatorState.emulator.pad.setLeftStick(x: x, y: y)
+                SmallButton(label: "START") {
+                    emulatorState.emulator.pad.pressButton(.start)
+                } onRelease: {
+                    emulatorState.emulator.pad.releaseButton(.start)
                 }
-                .frame(width: 80, height: 80)
-                .position(x: w * 0.3, y: h - 80)
-
-                AnalogStickView { x, y in
-                    emulatorState.emulator.pad.setRightStick(x: x, y: y)
-                }
-                .frame(width: 80, height: 80)
-                .position(x: w * 0.7, y: h - 80)
             }
+            .position(x: w * 0.5, y: centerY)
+
+            // Face buttons (×, ○, △, □)
+            FaceButtonsView(size: btnSize)
+                .frame(width: padSize, height: padSize)
+                .position(x: faceX, y: faceY)
+
+            // Shoulder buttons
+            ShoulderButton(label: "L1",
+                           action:  { emulatorState.emulator.pad.pressButton(.l1) },
+                           release: { emulatorState.emulator.pad.releaseButton(.l1) })
+                .position(x: w * 0.10, y: l1Y)
+
+            ShoulderButton(label: "L2",
+                           action:  { emulatorState.emulator.pad.pressButton(.l2) },
+                           release: { emulatorState.emulator.pad.releaseButton(.l2) })
+                .position(x: w * 0.10, y: l2Y)
+
+            ShoulderButton(label: "R1",
+                           action:  { emulatorState.emulator.pad.pressButton(.r1) },
+                           release: { emulatorState.emulator.pad.releaseButton(.r1) })
+                .position(x: w * 0.90, y: r1Y)
+
+            ShoulderButton(label: "R2",
+                           action:  { emulatorState.emulator.pad.pressButton(.r2) },
+                           release: { emulatorState.emulator.pad.releaseButton(.r2) })
+                .position(x: w * 0.90, y: r2Y)
+
+            // Analog sticks
+            AnalogStickView { x, y in emulatorState.emulator.pad.setLeftStick(x: x, y: y) }
+                .frame(width: 80, height: 80)
+                .position(x: lStickX, y: lStickY)
+
+            AnalogStickView { x, y in emulatorState.emulator.pad.setRightStick(x: x, y: y) }
+                .frame(width: 80, height: 80)
+                .position(x: rStickX, y: rStickY)
         }
     }
 }
@@ -83,7 +105,6 @@ struct DPadView: View {
 
     var body: some View {
         ZStack {
-            // Horizontal bar
             HStack(spacing: 4) {
                 dpadButton(.left,  icon: "chevron.left")
                 Spacer()
@@ -91,7 +112,6 @@ struct DPadView: View {
             }
             .frame(height: size)
 
-            // Vertical bar
             VStack(spacing: 4) {
                 dpadButton(.up,   icon: "chevron.up")
                 Spacer()
@@ -123,10 +143,10 @@ struct FaceButtonsView: View {
 
     var body: some View {
         ZStack {
-            faceBtn(.triangle, label: "△", color: Color(red: 0.3, green: 0.8, blue: 0.7), offset: CGPoint(x: 0, y: -size * 0.45))
+            faceBtn(.triangle, label: "△", color: Color(red: 0.3, green: 0.8, blue: 0.7), offset: CGPoint(x: 0,          y: -size * 0.45))
             faceBtn(.circle,   label: "○", color: Color(red: 1.0, green: 0.3, blue: 0.3), offset: CGPoint(x: size * 0.45, y: 0))
-            faceBtn(.cross,    label: "×", color: Color(red: 0.4, green: 0.5, blue: 1.0), offset: CGPoint(x: 0, y: size * 0.45))
-            faceBtn(.square,   label: "□", color: Color(red: 1.0, green: 0.5, blue: 0.7), offset: CGPoint(x: -size * 0.45, y: 0))
+            faceBtn(.cross,    label: "×", color: Color(red: 0.4, green: 0.5, blue: 1.0), offset: CGPoint(x: 0,           y: size * 0.45))
+            faceBtn(.square,   label: "□", color: Color(red: 1.0, green: 0.5, blue: 0.7), offset: CGPoint(x: -size * 0.45,y: 0))
         }
     }
 
@@ -151,26 +171,22 @@ struct AnalogStickView: View {
     let onChange: (Float, Float) -> Void
 
     @State private var thumbOffset: CGSize = .zero
-    private let baseSize: CGFloat = 80
+    private let baseSize: CGFloat  = 80
     private let thumbSize: CGFloat = 34
     private let maxRadius: CGFloat = 24
 
     var body: some View {
         ZStack {
-            // Base
             Circle()
                 .fill(.ultraThinMaterial)
                 .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                 .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
 
-            // Thumb
             Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color.white.opacity(0.4), Color.white.opacity(0.1)],
-                        center: .topLeading, startRadius: 0, endRadius: thumbSize
-                    )
-                )
+                .fill(RadialGradient(
+                    colors: [Color.white.opacity(0.4), Color.white.opacity(0.1)],
+                    center: .topLeading, startRadius: 0, endRadius: thumbSize
+                ))
                 .frame(width: thumbSize, height: thumbSize)
                 .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
                 .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
@@ -180,9 +196,9 @@ struct AnalogStickView: View {
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { v in
-                    let clamped = clamp(v.translation)
-                    thumbOffset = clamped
-                    onChange(Float(clamped.width / maxRadius), Float(clamped.height / maxRadius))
+                    let c = clamp(v.translation)
+                    thumbOffset = c
+                    onChange(Float(c.width / maxRadius), Float(c.height / maxRadius))
                 }
                 .onEnded { _ in
                     withAnimation(.spring(response: 0.2)) { thumbOffset = .zero }
@@ -191,11 +207,11 @@ struct AnalogStickView: View {
         )
     }
 
-    private func clamp(_ size: CGSize) -> CGSize {
-        let dist = sqrt(size.width * size.width + size.height * size.height)
-        if dist <= maxRadius { return size }
+    private func clamp(_ s: CGSize) -> CGSize {
+        let dist = sqrt(s.width * s.width + s.height * s.height)
+        if dist <= maxRadius { return s }
         let scale = maxRadius / dist
-        return CGSize(width: size.width * scale, height: size.height * scale)
+        return CGSize(width: s.width * scale, height: s.height * scale)
     }
 }
 
@@ -214,9 +230,7 @@ struct ShoulderButton: View {
         } onPress: {
             action()
             UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.6)
-        } onRelease: {
-            release()
-        }
+        } onRelease: { release() }
     }
 }
 
@@ -232,11 +246,7 @@ struct SmallButton: View {
             Text(label)
                 .font(.system(size: 10, weight: .bold))
                 .foregroundColor(.white.opacity(0.75))
-        } onPress: {
-            action()
-        } onRelease: {
-            onRelease()
-        }
+        } onPress: { action() } onRelease: { onRelease() }
     }
 }
 
@@ -253,24 +263,17 @@ struct GlassButton<Label: View>: View {
 
     init(size: CGFloat, tint: Color = .white,
          @ViewBuilder label: @escaping () -> Label,
-         onPress: @escaping () -> Void,
-         onRelease: @escaping () -> Void) {
+         onPress: @escaping () -> Void, onRelease: @escaping () -> Void) {
         self.size = CGSize(width: size, height: size)
-        self.tint = tint
-        self.label = label
-        self.onPress = onPress
-        self.onRelease = onRelease
+        self.tint = tint; self.label = label
+        self.onPress = onPress; self.onRelease = onRelease
     }
 
     init(size: CGSize, tint: Color = .white,
          @ViewBuilder label: @escaping () -> Label,
-         onPress: @escaping () -> Void,
-         onRelease: @escaping () -> Void) {
-        self.size = size
-        self.tint = tint
-        self.label = label
-        self.onPress = onPress
-        self.onRelease = onRelease
+         onPress: @escaping () -> Void, onRelease: @escaping () -> Void) {
+        self.size = size; self.tint = tint; self.label = label
+        self.onPress = onPress; self.onRelease = onRelease
     }
 
     var body: some View {
@@ -278,28 +281,23 @@ struct GlassButton<Label: View>: View {
             .frame(width: size.width, height: size.height)
             .background(
                 ZStack {
-                    // Liquid Glass base
                     RoundedRectangle(cornerRadius: min(size.width, size.height) * 0.35)
                         .fill(.ultraThinMaterial)
                     RoundedRectangle(cornerRadius: min(size.width, size.height) * 0.35)
-                        .fill(
-                            LinearGradient(
-                                colors: pressed
-                                    ? [tint.opacity(0.35), tint.opacity(0.2)]
-                                    : [Color.white.opacity(0.15), Color.white.opacity(0.05)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(LinearGradient(
+                            colors: pressed
+                                ? [tint.opacity(0.35), tint.opacity(0.2)]
+                                : [Color.white.opacity(0.15), Color.white.opacity(0.05)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ))
                 }
             )
             .overlay(
                 RoundedRectangle(cornerRadius: min(size.width, size.height) * 0.35)
-                    .stroke(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.3), Color.white.opacity(0.05)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ), lineWidth: 0.8
-                    )
+                    .stroke(LinearGradient(
+                        colors: [Color.white.opacity(0.3), Color.white.opacity(0.05)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ), lineWidth: 0.8)
             )
             .shadow(color: .black.opacity(pressed ? 0.1 : 0.25), radius: pressed ? 2 : 6, y: pressed ? 1 : 3)
             .scaleEffect(pressed ? 0.93 : 1.0)

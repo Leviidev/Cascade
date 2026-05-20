@@ -27,6 +27,8 @@
                 B0000017 /* PS2Emulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000017 /* PS2Emulator.swift */; };
                 B0000018 /* EmulatorState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000018 /* EmulatorState.swift */; };
                 B0000019 /* GameLibraryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000019 /* GameLibraryManager.swift */; };
+                B0000023 /* BackgroundKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000023 /* BackgroundKeepAlive.swift */; };
+                B0000024 /* CheatManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000024 /* CheatManager.swift */; };
                 B0000020 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A0000020 /* Assets.xcassets */; };
                 B0000021 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = A0000021 /* Info.plist */; };
 /* End PBXBuildFile section */
@@ -52,6 +54,8 @@
                 A0000017 /* PS2Emulator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PS2Emulator.swift; sourceTree = "<group>"; };
                 A0000018 /* EmulatorState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmulatorState.swift; sourceTree = "<group>"; };
                 A0000019 /* GameLibraryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameLibraryManager.swift; sourceTree = "<group>"; };
+                A0000023 /* BackgroundKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeepAlive.swift; sourceTree = "<group>"; };
+                A0000024 /* CheatManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheatManager.swift; sourceTree = "<group>"; };
                 A0000020 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
                 A0000021 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
                 PRODREF01 /* Cascade.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cascade.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -101,6 +105,8 @@
                                 A0000017 /* PS2Emulator.swift */,
                                 A0000018 /* EmulatorState.swift */,
                                 A0000019 /* GameLibraryManager.swift */,
+                                A0000023 /* BackgroundKeepAlive.swift */,
+                                A0000024 /* CheatManager.swift */,
                                 PS2GROUP,
                         );
                         name = Core;
@@ -238,6 +244,8 @@
                                 B0000017 /* PS2Emulator.swift in Sources */,
                                 B0000018 /* EmulatorState.swift in Sources */,
                                 B0000019 /* GameLibraryManager.swift in Sources */,
+                                B0000023 /* BackgroundKeepAlive.swift in Sources */,
+                                B0000024 /* CheatManager.swift in Sources */,
                         );
                         runOnlyForDeploymentPostprocessing = 0;
                 };

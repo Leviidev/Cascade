@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var emulatorState: EmulatorState
+    @EnvironmentObject var keepAlive: BackgroundKeepAlive
     @AppStorage("resolutionScale")   var resolutionScale: Double = 1.0
     @AppStorage("frameLimiter")      var frameLimiter: String = "60"
     @AppStorage("widescreenHack")    var widescreenHack: Bool = false
@@ -34,6 +35,7 @@ struct SettingsView: View {
                     renderingSection
                     gameplaySection
                     audioSection
+                    backgroundSection
                     controllerSection
                     aboutSection
                 }
@@ -438,6 +440,33 @@ struct AboutView: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+    }
+
+    // MARK: - Background Keep-Alive Section
+
+    private var backgroundSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle(isOn: $keepAlive.isEnabled) {
+                    Label("Keep App Alive in Background", systemImage: "location.fill")
+                }
+                Text("Uses a silent, minimal location update to prevent iOS from suspending the emulator when you switch apps — identical to the technique used by MeloNX.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if keepAlive.authStatus == .denied || keepAlive.authStatus == .restricted {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("Location permission denied. Enable it in iOS Settings → Cascade.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Text("Background")
         }
     }
 

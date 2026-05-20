@@ -225,29 +225,41 @@ struct SaveStateSheet: View {
     var body: some View {
         NavigationStack {
             List(0..<8) { slot in
+                let date = emulatorState.stateDate(slot: slot)
                 Button(action: {
                     mode == .save ? emulatorState.saveState(slot: slot) : emulatorState.loadState(slot: slot)
                     isPresented = false
                 }) {
                     HStack {
-                        Image(systemName: "square.filled.on.square")
-                            .foregroundStyle(Color.cascadeBlue)
-                        VStack(alignment: .leading) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(date != nil ? Color.cascadeBlue.opacity(0.15) : Color(.tertiarySystemFill))
+                                .frame(width: 38, height: 38)
+                            Image(systemName: date != nil ? "square.fill.on.square.fill" : "square.dashed")
+                                .foregroundStyle(date != nil ? Color.cascadeBlue : Color.secondary)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
                             Text("Slot \(slot + 1)")
                                 .font(.headline)
-                            Text(emulatorState.stateExists(slot: slot) ? "Saved" : "Empty")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            if let date {
+                                Text(date, style: .relative)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Empty")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
                         Spacer()
-                        if mode == .load && !emulatorState.stateExists(slot: slot) {
-                            Text("Empty")
+                        if date != nil {
+                            Image(systemName: "chevron.right")
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
                         }
                     }
                 }
-                .disabled(mode == .load && !emulatorState.stateExists(slot: slot))
+                .disabled(mode == .load && date == nil)
             }
             .navigationTitle(mode == .save ? "Save State" : "Load State")
             .navigationBarTitleDisplayMode(.inline)

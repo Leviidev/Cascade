@@ -92,7 +92,11 @@ public final class PS2Emulator: @unchecked Sendable {
 
     func loadDisc(url: URL) throws {
         guard biosLoaded else { throw EmulatorError.biosNotLoaded }
-        try cdvd.loadISO(url: url)
+        switch url.pathExtension.lowercased() {
+        case "cue": try cdvd.loadCUE(url: url)
+        case "bin": try cdvd.loadBIN(url: url)
+        default:    try cdvd.loadISO(url: url)
+        }
         framesPerSecond = cdvd.discRegion == .pal ? 50 : 60
     }
 

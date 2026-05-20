@@ -51,6 +51,12 @@
         </array>
         <key>NSDocumentsFolderUsageDescription</key>
         <string>Cascade needs access to your files to import game ROMs and BIOS files.</string>
+        <key>NSLocationWhenInUseUsageDescription</key>
+        <string>Cascade uses a silent, low-accuracy location update to keep the emulator running in the background. No location data is stored or transmitted.</string>
+        <key>UIBackgroundModes</key>
+        <array>
+                <string>location</string>
+        </array>
         <key>UIFileSharingEnabled</key>
         <true/>
         <key>LSSupportsOpeningDocumentsInPlace</key>
