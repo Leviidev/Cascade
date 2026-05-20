@@ -27,14 +27,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
-
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - name: Select latest available Xcode
+        run: |
+          # Pick the highest-versioned Xcode available on this runner
+          XCODE=$(ls /Applications | grep -E '^Xcode_[0-9]' | sort -V | tail -1)
+          if [ -n "$XCODE" ]; then
+            sudo xcode-select -s "/Applications/$XCODE/Contents/Developer"
+            echo "Selected: $XCODE"
+          else
+            echo "Using default Xcode"
+          fi
+          xcodebuild -version
 
       - name: Install xcpretty
-        run: gem install xcpretty --no-document
+        run: gem install xcpretty --no-document 2>/dev/null; true
+
+      - name: Resize AppIcon to 1024x1024
+        run: |
+          ICON="Cascade/Assets.xcassets/AppIcon.appiconset/icon.png"
+          ACTUAL=$(sips -g pixelWidth "$ICON" 2>/dev/null | awk '/pixelWidth/{print $2}')
+          if [ "$ACTUAL" != "1024" ]; then
+            echo "Resizing icon from ${ACTUAL}px to 1024px"
+            sips -z 1024 1024 "$ICON"
+          else
+            echo "Icon is already 1024x1024"
+          fi
 
       - name: Cache DerivedData
         uses: actions/cache@v4

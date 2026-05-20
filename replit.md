@@ -63,7 +63,7 @@ bash BuildTools/build_ipa.sh --release
 
 ## Requirements (Runtime)
 
-- iOS 26+ device or simulator
+- iOS 18+ device or simulator (deployment target; UI targets iOS 26 Liquid Glass style)
 - A legally dumped PS2 BIOS (`SCPH-70012.bin` recommended)
 - PS2 game images in ISO or BIN format
 
