@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var emulatorState: EmulatorState
@@ -45,7 +46,12 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.large)
             .fileImporter(
                 isPresented: $showBIOSImporter,
-                allowedContentTypes: [.data],
+                allowedContentTypes: [
+                    UTType(importedAs: "com.cascade.ps2bios"),
+                    UTType(filenameExtension: "bin") ?? .data,
+                    UTType(filenameExtension: "zip") ?? .data,
+                    .zip
+                ],
                 allowsMultipleSelection: false
             ) { result in
                 if case .success(let urls) = result, let url = urls.first {
@@ -438,7 +444,7 @@ struct AboutView: View {
                             Text("PS2 Emulator for iOS")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                            Text("Version 1.0")
+                            Text("Version 1.0.1")
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
                                 .padding(.horizontal, 12)

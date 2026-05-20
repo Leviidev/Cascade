@@ -19,9 +19,9 @@
         <key>CFBundleIconName</key>
         <string>AppIcon</string>
         <key>CFBundleShortVersionString</key>
-        <string>1.0</string>
+        <string>1.0.1</string>
         <key>CFBundleVersion</key>
-        <string>1</string>
+        <string>2</string>
         <key>LSRequiresIPhoneOS</key>
         <true/>
         <key>UIApplicationSceneManifest</key>
@@ -61,6 +61,27 @@
         <true/>
         <key>LSSupportsOpeningDocumentsInPlace</key>
         <true/>
+        <key>UTImportedTypeDeclarations</key>
+        <array>
+                <dict>
+                        <key>UTTypeIdentifier</key>
+                        <string>com.cascade.ps2bios</string>
+                        <key>UTTypeDescription</key>
+                        <string>PS2 BIOS File</string>
+                        <key>UTTypeConformsTo</key>
+                        <array>
+                                <string>public.data</string>
+                                <string>public.content</string>
+                        </array>
+                        <key>UTTypeTagSpecification</key>
+                        <dict>
+                                <key>public.filename-extension</key>
+                                <array>
+                                        <string>bin</string>
+                                </array>
+                        </dict>
+                </dict>
+        </array>
         <key>CFBundleDocumentTypes</key>
         <array>
                 <dict>

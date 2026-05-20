@@ -1,5 +1,7 @@
 import SwiftUI
 import Combine
+import Compression
+import UniformTypeIdentifiers
 
 // MARK: - Global Emulator State (ObservableObject)
 
@@ -82,7 +84,16 @@ public final class EmulatorState: ObservableObject {
         _ = url.startAccessingSecurityScopedResource()
         defer { url.stopAccessingSecurityScopedResource() }
         do {
-            let data = try Data(contentsOf: url)
+            let raw = try Data(contentsOf: url)
+            let data: Data
+            if url.pathExtension.lowercased() == "zip" || isZipData(raw) {
+                guard let extracted = extractBinFromZip(raw) else {
+                    throw EmulatorError.biosInvalid("No .bin file found inside the ZIP archive.")
+                }
+                data = extracted
+            } else {
+                data = raw
+            }
             let dir  = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let dest = dir.appendingPathComponent("bios.bin")
@@ -93,6 +104,67 @@ public final class EmulatorState: ObservableObject {
             errorMessage = error.localizedDescription
             showError = true
         }
+    }
+
+    // MARK: - ZIP Extraction
+
+    private func isZipData(_ data: Data) -> Bool {
+        data.count >= 4 &&
+        data[0] == 0x50 && data[1] == 0x4B &&
+        data[2] == 0x03 && data[3] == 0x04
+    }
+
+    private func extractBinFromZip(_ zipData: Data) -> Data? {
+        let bytes = [UInt8](zipData)
+        var offset = 0
+        while offset + 30 <= bytes.count {
+            guard bytes[offset]   == 0x50, bytes[offset+1] == 0x4B,
+                  bytes[offset+2] == 0x03, bytes[offset+3] == 0x04 else { break }
+
+            let method   = Int(bytes[offset+8])  | (Int(bytes[offset+9])  << 8)
+            let cmpSize  = Int(bytes[offset+18]) | (Int(bytes[offset+19]) << 8)
+                         | (Int(bytes[offset+20]) << 16) | (Int(bytes[offset+21]) << 24)
+            let ucmpSize = Int(bytes[offset+22]) | (Int(bytes[offset+23]) << 8)
+                         | (Int(bytes[offset+24]) << 16) | (Int(bytes[offset+25]) << 24)
+            let nameLen  = Int(bytes[offset+26]) | (Int(bytes[offset+27]) << 8)
+            let extraLen = Int(bytes[offset+28]) | (Int(bytes[offset+29]) << 8)
+
+            let nameStart = offset + 30
+            let dataStart = nameStart + nameLen + extraLen
+            let dataEnd   = dataStart + cmpSize
+
+            guard dataEnd <= bytes.count else { break }
+
+            let name = String(bytes: bytes[nameStart ..< nameStart + nameLen], encoding: .utf8) ?? ""
+
+            if name.lowercased().hasSuffix(".bin") {
+                let compressed = Data(bytes[dataStart ..< dataEnd])
+                switch method {
+                case 0:
+                    return compressed
+                case 8:
+                    let capacity = max(ucmpSize, 1)
+                    var out = Data(count: capacity)
+                    let written: Int = out.withUnsafeMutableBytes { dst in
+                        compressed.withUnsafeBytes { src in
+                            compression_decode_buffer(
+                                dst.bindMemory(to: UInt8.self).baseAddress!,
+                                capacity,
+                                src.bindMemory(to: UInt8.self).baseAddress!,
+                                compressed.count,
+                                nil,
+                                COMPRESSION_ZLIB
+                            )
+                        }
+                    }
+                    return written > 0 ? Data(out.prefix(written)) : nil
+                default:
+                    break
+                }
+            }
+            offset = dataEnd
+        }
+        return nil
     }
 
     // MARK: - Game Launch
