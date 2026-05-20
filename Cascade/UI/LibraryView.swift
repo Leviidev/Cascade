@@ -5,8 +5,8 @@ struct LibraryView: View {
     @EnvironmentObject var library: GameLibraryManager
     @EnvironmentObject var emulatorState: EmulatorState
 
-    @State private var showImporter       = false
-    @State private var showBIOSImporter   = false
+    private enum ImportMode { case game, bios }
+    @State private var importMode: ImportMode? = nil
     @State private var showNewCollection  = false
     @State private var newCollectionName  = ""
     @State private var selectedGame: GameEntry?
@@ -45,27 +45,20 @@ struct LibraryView: View {
                 }
             }
             .fileImporter(
-                isPresented: $showImporter,
-                allowedContentTypes: [
-                    UTType(filenameExtension: "iso") ?? .data,
-                    UTType(filenameExtension: "bin") ?? .data,
-                    UTType(filenameExtension: "cue") ?? .data,
-                    .data
-                ],
+                isPresented: Binding(
+                    get: { importMode != nil },
+                    set: { if !$0 { importMode = nil } }
+                ),
+                allowedContentTypes: [.item],
                 allowsMultipleSelection: false
             ) { result in
-                if case .success(let urls) = result, let url = urls.first {
-                    library.importGame(from: url)
+                guard case .success(let urls) = result, let url = urls.first else { return }
+                switch importMode {
+                case .game: library.importGame(from: url)
+                case .bios: emulatorState.importBIOS(from: url)
+                case .none: break
                 }
-            }
-            .fileImporter(
-                isPresented: $showBIOSImporter,
-                allowedContentTypes: [.data],
-                allowsMultipleSelection: false
-            ) { result in
-                if case .success(let urls) = result, let url = urls.first {
-                    emulatorState.importBIOS(from: url)
-                }
+                importMode = nil
             }
             .sheet(item: $selectedGame) { game in
                 GameDetailView(game: game)
@@ -284,7 +277,7 @@ struct LibraryView: View {
                         .shadow(color: Color.cascadeBlue.opacity(0.35), radius: 8, y: 4)
                 }
                 if !emulatorState.biosLoaded {
-                    Button(action: { showBIOSImporter = true }) {
+                    Button(action: { importMode = .bios }) {
                         Label("Import BIOS", systemImage: "cpu")
                             .font(.subheadline)
                             .frame(maxWidth: 220)
@@ -303,7 +296,7 @@ struct LibraryView: View {
     // MARK: - Toolbar Items
 
     private var biosWarningButton: some View {
-        Button(action: { showBIOSImporter = true }) {
+        Button(action: { importMode = .bios }) {
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle.fill")
                 Text("BIOS")
@@ -317,7 +310,7 @@ struct LibraryView: View {
     }
 
     private var addButton: some View {
-        Button(action: { showImporter = true }) {
+        Button(action: { importMode = .game }) {
             Image(systemName: "plus").font(.body.bold())
         }
     }

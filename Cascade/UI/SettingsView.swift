@@ -46,12 +46,7 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.large)
             .fileImporter(
                 isPresented: $showBIOSImporter,
-                allowedContentTypes: [
-                    UTType(importedAs: "com.cascade.ps2bios"),
-                    UTType(filenameExtension: "bin") ?? .data,
-                    UTType(filenameExtension: "zip") ?? .data,
-                    .zip
-                ],
+                allowedContentTypes: [.item],
                 allowsMultipleSelection: false
             ) { result in
                 if case .success(let urls) = result, let url = urls.first {
