@@ -39,7 +39,8 @@ if ! command -v xcodebuild &>/dev/null; then
   exit 1
 fi
 
-XCODE_VERSION=$(xcodebuild -version | head -1)
+_XCODE_OUT=$(xcodebuild -version)
+XCODE_VERSION=$(echo "$_XCODE_OUT" | head -1)
 echo "✅  $XCODE_VERSION"
 
 # ── Clean previous build ──────────────────────────────────────────────────────
