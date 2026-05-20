@@ -1,3 +1,4 @@
+modules = ["swift-5.8", "bash"]
 [agent]
 expertMode = true
 stack = "BEST_EFFORT_FALLBACK"
@@ -21,6 +22,10 @@ args = "Build IPA (Release)"
 task = "workflow.run"
 args = "Build IPA (Debug)"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Cascade Info"
+
 [[workflows.workflow]]
 name = "Build IPA (Release)"
 author = "agent"
@@ -39,6 +44,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "bash BuildTools/build_ipa.sh"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Cascade Info"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash BuildTools/info.sh"
 
 [workflows.workflow.metadata]
 outputType = "console"
