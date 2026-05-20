@@ -69,51 +69,22 @@ fi
 
 echo "✅  Archive created: $ARCHIVE_PATH"
 
-# ── Export IPA (unsigned) ─────────────────────────────────────────────────────
+# ── Package IPA (unsigned — manual zip, no team required) ─────────────────────
 echo ""
-echo "▶  Exporting unsigned IPA…"
+echo "▶  Packaging unsigned IPA…"
 
-EXPORT_PLIST=$(mktemp /tmp/cascade_export.XXXXXX.plist)
-cat > "$EXPORT_PLIST" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>ad-hoc</string>
-  <key>signingStyle</key>
-  <string>manual</string>
-  <key>stripSwiftSymbols</key>
-  <true/>
-  <key>compileBitcode</key>
-  <false/>
-</dict>
-</plist>
-PLIST
+APP_PATH=$(find "$ARCHIVE_PATH/Products/Applications" -name "*.app" | head -1)
 
-xcodebuild -exportArchive \
-  -archivePath "$ARCHIVE_PATH" \
-  -exportOptionsPlist "$EXPORT_PLIST" \
-  -exportPath "$IPA_DIR" \
-  CODE_SIGNING_ALLOWED=NO \
-  CODE_SIGN_IDENTITY="-" \
-  | xcpretty 2>/dev/null || true
-
-rm -f "$EXPORT_PLIST"
-
-# ── Find the IPA ──────────────────────────────────────────────────────────────
-IPA_FILE=$(find "$IPA_DIR" -name "*.ipa" 2>/dev/null | head -1)
-
-if [[ -z "$IPA_FILE" ]]; then
-  # Fallback: manually zip the .app from the archive
-  echo "⚠️   xcodebuild export didn't produce an IPA — packaging manually…"
-  APP_PATH=$(find "$ARCHIVE_PATH/Products/Applications" -name "*.app" | head -1)
-  mkdir -p "$IPA_DIR/Payload"
-  cp -R "$APP_PATH" "$IPA_DIR/Payload/"
-  (cd "$IPA_DIR" && zip -qr "Cascade.ipa" Payload/)
-  rm -rf "$IPA_DIR/Payload"
-  IPA_FILE="$IPA_DIR/Cascade.ipa"
+if [[ -z "$APP_PATH" ]]; then
+  echo "❌  No .app found in archive."
+  exit 1
 fi
+
+mkdir -p "$IPA_DIR/Payload"
+cp -R "$APP_PATH" "$IPA_DIR/Payload/"
+(cd "$IPA_DIR" && zip -qr "Cascade.ipa" Payload/)
+rm -rf "$IPA_DIR/Payload"
+IPA_FILE="$IPA_DIR/Cascade.ipa"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
