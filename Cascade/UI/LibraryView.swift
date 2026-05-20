@@ -266,7 +266,7 @@ struct LibraryView: View {
                     .padding(.horizontal, 20)
             }
             VStack(spacing: 12) {
-                Button(action: { showImporter = true }) {
+                Button(action: { importMode = .game }) {
                     Label("Import Game", systemImage: "plus.circle.fill")
                         .font(.headline)
                         .frame(maxWidth: 220)
