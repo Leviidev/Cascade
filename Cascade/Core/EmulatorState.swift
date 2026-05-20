@@ -102,25 +102,26 @@ public final class EmulatorState: ObservableObject {
 
     func launch(game: GameEntry) {
         status = .loading
+        let emulator  = self.emulator
+        let biosURL   = self.biosURL
         Task.detached(priority: .userInitiated) { [weak self] in
-            guard let self = self else { return }
             do {
-                if let burl = await self.biosURL {
+                if let burl = biosURL {
                     let bdata = try Data(contentsOf: burl)
-                    try await self.emulator.loadBIOS(data: bdata)
+                    try emulator.loadBIOS(data: bdata)
                 }
-                try await self.emulator.loadDisc(url: game.url)
-                await MainActor.run {
-                    self.currentGame = game
-                    self.status = .running
-                    self.startFPSCounter()
+                try emulator.loadDisc(url: game.url)
+                await MainActor.run { [weak self] in
+                    self?.currentGame = game
+                    self?.status = .running
+                    self?.startFPSCounter()
                 }
-                await self.emulator.start()
+                emulator.start()
             } catch {
-                await MainActor.run {
-                    self.status = .idle
-                    self.errorMessage = error.localizedDescription
-                    self.showError = true
+                await MainActor.run { [weak self] in
+                    self?.status = .idle
+                    self?.errorMessage = error.localizedDescription
+                    self?.showError = true
                 }
             }
         }

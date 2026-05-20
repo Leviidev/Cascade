@@ -147,11 +147,15 @@ public final class SPU2 {
         let f0 = SPU2.filter0[min(filter, 4)]
         let f1 = SPU2.filter1[min(filter, 4)]
 
+        var prev0 = voice.prevSample0
+        var prev1 = voice.prevSample1
         for i in 0..<14 {
             let byte = Int(mem[addr + 2 + i])
-            decodeNibble(nibble: byte & 0xF, shift: shift, f0: f0, f1: f1, out: &voice.sampleBuffer[i * 2], voice: &voice)
-            decodeNibble(nibble: (byte >> 4) & 0xF, shift: shift, f0: f0, f1: f1, out: &voice.sampleBuffer[i * 2 + 1], voice: &voice)
+            voice.sampleBuffer[i * 2]     = decodeNibble(nibble: byte & 0xF,        shift: shift, f0: f0, f1: f1, prev0: &prev0, prev1: &prev1)
+            voice.sampleBuffer[i * 2 + 1] = decodeNibble(nibble: (byte >> 4) & 0xF, shift: shift, f0: f0, f1: f1, prev0: &prev0, prev1: &prev1)
         }
+        voice.prevSample0 = prev0
+        voice.prevSample1 = prev1
 
         if flags & 0x04 != 0 { voice.loopAddress = voice.currentAddress }
         voice.loopFlag = flags & 0x02 != 0
@@ -162,14 +166,14 @@ public final class SPU2 {
         if voice.endFlag && !voice.loopFlag { voice.on = false }
     }
 
-    private func decodeNibble(nibble: Int, shift: Int, f0: Int32, f1: Int32, out: inout Int16, voice: inout Voice) {
+    private func decodeNibble(nibble: Int, shift: Int, f0: Int32, f1: Int32, prev0: inout Int32, prev1: inout Int32) -> Int16 {
         let s = nibble >= 8 ? nibble - 16 : nibble
         var sample = Int32(s << (12 - shift))
-        sample += (voice.prevSample0 * f0 + voice.prevSample1 * f1 + 32) >> 6
+        sample += (prev0 * f0 + prev1 * f1 + 32) >> 6
         sample = max(-32768, min(32767, sample))
-        out = Int16(sample)
-        voice.prevSample1 = voice.prevSample0
-        voice.prevSample0 = sample
+        prev1 = prev0
+        prev0 = sample
+        return Int16(sample)
     }
 
     // MARK: - ADSR Envelope

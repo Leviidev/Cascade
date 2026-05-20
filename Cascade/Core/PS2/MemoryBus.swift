@@ -72,7 +72,6 @@ public final class MemoryBus {
     }
 
     func read16(address: UInt32) -> UInt16 {
-        let p = physicalAddress(address)
         return UInt16(read8(address: address)) | (UInt16(read8(address: address + 1)) << 8)
     }
 

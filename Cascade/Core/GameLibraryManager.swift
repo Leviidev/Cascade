@@ -146,7 +146,7 @@ public final class GameLibraryManager: ObservableObject {
             "SLUS-20136": "God of War",
             "SLUS-21236": "God of War II",
             "SLUS-20762": "Shadow of the Colossus",
-            "SLUS-21236": "Ico",
+            "SCES-50360": "Ico",
             "SLUS-20552": "Kingdom Hearts",
             "SLUS-21005": "Kingdom Hearts II",
             "SLPS-25088": "Final Fantasy X",
