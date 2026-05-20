@@ -7,6 +7,7 @@ import CoreLocation
 // Requires "When In Use" location permission and UIBackgroundModes = [location]
 // in Info.plist.
 
+@MainActor
 public final class BackgroundKeepAlive: NSObject, ObservableObject {
 
     @Published public var isEnabled: Bool {
@@ -53,17 +54,17 @@ public final class BackgroundKeepAlive: NSObject, ObservableObject {
 // MARK: - CLLocationManagerDelegate
 
 extension BackgroundKeepAlive: CLLocationManagerDelegate {
-    public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        DispatchQueue.main.async { [weak self] in
+    nonisolated public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        Task { @MainActor [weak self] in
             guard let self else { return }
-            self.authStatus = manager.authorizationStatus
-            if (manager.authorizationStatus == .authorizedWhenInUse ||
-                manager.authorizationStatus == .authorizedAlways) && self.isEnabled {
+            self.authStatus = status
+            if (status == .authorizedWhenInUse || status == .authorizedAlways) && self.isEnabled {
                 self.startMonitoring()
             }
         }
     }
 
-    public func locationManager(_ manager: CLLocationManager,
-                                didUpdateLocations locations: [CLLocation]) {}
+    nonisolated public func locationManager(_ manager: CLLocationManager,
+                                            didUpdateLocations locations: [CLLocation]) {}
 }
