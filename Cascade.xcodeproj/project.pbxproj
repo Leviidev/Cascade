@@ -198,7 +198,6 @@
                         buildActionMask = 2147483647;
                         files = (
                                 B0000020 /* Assets.xcassets in Resources */,
-                                B0000021 /* Info.plist in Resources */,
                         );
                         runOnlyForDeploymentPostprocessing = 0;
                 };
