@@ -94,7 +94,7 @@ struct SettingsView: View {
         Section {
             VStack(spacing: 10) {
                 ForEach(ExecutionMode.allCases, id: \.self) { mode in
-                    executionModeRow(mode: mode)
+                    executionModeRow(mode)
                 }
             }
             .padding(.vertical, 4)

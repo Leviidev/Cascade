@@ -40,7 +40,7 @@ struct LibraryView: View {
             }
             .fileImporter(
                 isPresented: $showImporter,
-                allowedContentTypes: [.iso8211, UTType(filenameExtension: "bin") ?? .data, .data],
+                allowedContentTypes: [UTType(filenameExtension: "iso") ?? .data, UTType(filenameExtension: "bin") ?? .data, .data],
                 allowsMultipleSelection: false
             ) { result in
                 if case .success(let urls) = result, let url = urls.first {

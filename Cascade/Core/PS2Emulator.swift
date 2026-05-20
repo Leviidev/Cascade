@@ -3,7 +3,7 @@ import Metal
 
 // MARK: - PS2 Emulator — Main Orchestrator
 
-public final class PS2Emulator {
+public final class PS2Emulator: @unchecked Sendable {
 
     // MARK: - Components
 

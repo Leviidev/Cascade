@@ -76,7 +76,7 @@ final class CompiledBlock {
 
 /// Caches compiled blocks keyed by their starting PC.
 /// Thread-safe for read-heavy workloads (single writer, concurrent readers).
-public final class JITBlockCache {
+public final class JITBlockCache: @unchecked Sendable {
 
     // Maximum number of cached blocks before eviction
     private static let maxBlocks = 4096
