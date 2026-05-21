@@ -28,6 +28,8 @@ public final class DMAC {
     weak var bus: MemoryBus?
     weak var intc: INTC?
     weak var gs: GraphicsSynthesizer?
+    weak var vif0: VectorInterface?
+    weak var vif1: VectorInterface?
 
     func step() {
         for i in 0..<DMAC.channelCount {
@@ -47,7 +49,33 @@ public final class DMAC {
 
         let batchSize = min(ch.qwc, 16)
         switch idx {
-        case 2: // GIF
+        case 0: // VIF0 — feed data into VIF0
+            if let vif = vif0 {
+                var words: [UInt32] = []
+                for _ in 0..<(batchSize * 4) {
+                    words.append(bus.read32(address: ch.madr))
+                    ch.madr += 4
+                }
+                ch.qwc -= batchSize
+                vif.feed(words: words)
+            } else {
+                ch.madr += batchSize * 16
+                ch.qwc  -= batchSize
+            }
+        case 1: // VIF1 — feed data into VIF1
+            if let vif = vif1 {
+                var words: [UInt32] = []
+                for _ in 0..<(batchSize * 4) {
+                    words.append(bus.read32(address: ch.madr))
+                    ch.madr += 4
+                }
+                ch.qwc -= batchSize
+                vif.feed(words: words)
+            } else {
+                ch.madr += batchSize * 16
+                ch.qwc  -= batchSize
+            }
+        case 2: // GIF — direct path to GS
             var gifData: [UInt64] = []
             for _ in 0..<batchSize {
                 let lo = UInt64(bus.read32(address: ch.madr))
@@ -57,9 +85,6 @@ public final class DMAC {
                 ch.qwc  -= 1
             }
             gs?.processGIFPacket(data: gifData, qwordCount: gifData.count, flag: 0)
-        case 4, 5: // VIF0 / VIF1 — simplified, just advance
-            ch.madr += batchSize * 16
-            ch.qwc  -= batchSize
         default:
             ch.madr += batchSize * 16
             ch.qwc  -= batchSize

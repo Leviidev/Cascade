@@ -17,6 +17,10 @@ public final class PS2Emulator: @unchecked Sendable {
     let spu2:  SPU2
     let cdvd:  CDVD
     let pad:   PadManager
+    let vu0:   VectorUnit
+    let vu1:   VectorUnit
+    let vif0:  VectorInterface
+    let vif1:  VectorInterface
 
     // MARK: - JIT
 
@@ -65,6 +69,10 @@ public final class PS2Emulator: @unchecked Sendable {
         spu2  = SPU2()
         cdvd  = CDVD()
         pad   = PadManager()
+        vu0   = VectorUnit(index: 0)
+        vu1   = VectorUnit(index: 1)
+        vif0  = VectorInterface(index: 0)
+        vif1  = VectorInterface(index: 1)
         ee    = EmotionEngine(bus: bus)
         iop   = IOProcessor()
 
@@ -76,10 +84,32 @@ public final class PS2Emulator: @unchecked Sendable {
         dmac.bus  = bus
         dmac.intc = intc
         dmac.gs   = gs
+        dmac.vif0 = vif0
+        dmac.vif1 = vif1
         timer.intc = intc
         iop.spu2   = spu2
         iop.cdvd   = cdvd
         iop.pad    = pad
+
+        vif0.vu = vu0
+        vif1.vu = vu1
+        vif1.gs = gs
+
+        ee.vu0 = vu0
+
+        vu1.onXGKICK = { [weak self] bytes, len in
+            guard let self else { return }
+            let qwords = len / 16
+            var data: [UInt64] = []
+            data.reserveCapacity(qwords * 2)
+            var off = 0
+            while off + 8 <= bytes.count {
+                let lo = bytes.withUnsafeBytes { $0.load(fromByteOffset: off, as: UInt64.self).littleEndian }
+                data.append(lo)
+                off += 8
+            }
+            self.gs.processGIFPacket(data: data, qwordCount: data.count / 2, flag: 0)
+        }
     }
 
     // MARK: - BIOS Loading

@@ -97,6 +97,7 @@ public final class EmotionEngine {
         case 0x0F: executeLUI(rt: d.rt, imm: UInt16(d.raw & 0xFFFF))
         case 0x10: decodeCOP0(rs: d.rs, rt: d.rt, rd: d.rd, instruction: d.raw)
         case 0x11: decodeCOP1(rs: d.rs, rt: d.rt, rd: d.rd, funct: d.funct, instruction: d.raw)
+        case 0x12: decodeCOP2(rs: d.rs, rt: d.rt, rd: d.rd, instruction: d.raw)
         case 0x14: executeBEQL(rs: d.rs, rt: d.rt, offset: d.imm16)
         case 0x15: executeBNEL(rs: d.rs, rt: d.rt, offset: d.imm16)
         case 0x18: executeDDIVI(rt: d.rt, rs: d.rs, imm: d.imm16)
@@ -167,6 +168,7 @@ public final class EmotionEngine {
         case 0x0F: executeLUI(rt: rt, imm: UInt16(instruction & 0xFFFF))
         case 0x10: decodeCOP0(rs: rs, rt: rt, rd: rd, instruction: instruction)
         case 0x11: decodeCOP1(rs: rs, rt: rt, rd: rd, funct: funct, instruction: instruction)
+        case 0x12: decodeCOP2(rs: rs, rt: rt, rd: rd, instruction: instruction)
         case 0x14: executeBEQL(rs: rs, rt: rt, offset: imm16)
         case 0x15: executeBNEL(rs: rs, rt: rt, offset: imm16)
         case 0x18: executeDDIVI(rt: rt, rs: rs, imm: imm16)
@@ -403,8 +405,179 @@ public final class EmotionEngine {
         }
     }
 
-    private func decodeMMI2(instruction: UInt32, rs: Int, rt: Int, rd: Int) { }
-    private func decodeMMI3(instruction: UInt32, rs: Int, rt: Int, rd: Int) { }
+    private func decodeMMI2(instruction: UInt32, rs: Int, rt: Int, rd: Int) {
+        let subfunc = (instruction >> 6) & 0x1F
+        switch subfunc {
+        case 0x00: // PMADDW — 32-bit parallel multiply-add to HI1:LO1 and HI:LO
+            let a = Int64(Int32(bitPattern: gpr[rs].lo32)) * Int64(Int32(bitPattern: gpr[rt].lo32))
+            let b = Int64(Int32(bitPattern: UInt32(gpr[rs].hi >> 32))) * Int64(Int32(bitPattern: UInt32(gpr[rt].hi >> 32)))
+            lo = UInt64(bitPattern: Int64(bitPattern: lo) &+ a)
+            hi = UInt64(bitPattern: Int64(bitPattern: hi) &+ b)
+            if rd != 0 { gpr[rd] = UInt128(hi: hi, lo: lo) }
+        case 0x02: // PSRLVW — variable right shift
+            let shift = gpr[rt].lo32 & 0x1F
+            let lo32 = gpr[rs].lo32 >> shift
+            let hi32 = UInt32(gpr[rs].hi & 0xFFFF_FFFF) >> shift
+            if rd != 0 {
+                gpr[rd] = UInt128(hi: UInt64(hi32), lo: UInt64(lo32))
+            }
+        case 0x03: // PSRAVW — variable arithmetic right shift
+            let shift = gpr[rt].lo32 & 0x1F
+            let lo32 = UInt32(bitPattern: Int32(bitPattern: gpr[rs].lo32) >> shift)
+            let hi32 = UInt32(bitPattern: Int32(bitPattern: UInt32(gpr[rs].hi & 0xFFFF_FFFF)) >> shift)
+            if rd != 0 { gpr[rd] = UInt128(hi: UInt64(hi32), lo: UInt64(lo32)) }
+        case 0x08: // PMFHI — move from HI register pipeline
+            if rd != 0 { gpr[rd] = UInt128(hi: hi1, lo: hi) }
+        case 0x09: // PMFLO
+            if rd != 0 { gpr[rd] = UInt128(hi: lo1, lo: lo) }
+        case 0x0A: // PINTH — interleave halfwords
+            if rd != 0 {
+                let lo16_s = UInt64(gpr[rs].lo32 & 0xFFFF)
+                let hi16_s = UInt64((gpr[rs].lo32 >> 16) & 0xFFFF)
+                let lo16_t = UInt64(gpr[rt].lo32 & 0xFFFF)
+                let hi16_t = UInt64((gpr[rt].lo32 >> 16) & 0xFFFF)
+                let r = lo16_t | (lo16_s << 16) | (hi16_t << 32) | (hi16_s << 48)
+                gpr[rd] = UInt128(hi: 0, lo: r)
+            }
+        case 0x0C: // PMULTW — parallel multiply (32×32 → 64)
+            let a = Int64(Int32(bitPattern: gpr[rs].lo32)) * Int64(Int32(bitPattern: gpr[rt].lo32))
+            let b = Int64(Int32(bitPattern: UInt32(gpr[rs].hi & 0xFFFF_FFFF))) * Int64(Int32(bitPattern: UInt32(gpr[rt].hi & 0xFFFF_FFFF)))
+            lo = UInt64(bitPattern: a); hi = UInt64(bitPattern: b)
+            if rd != 0 { gpr[rd] = UInt128(hi: hi, lo: lo) }
+        case 0x0D: // PDIVW — parallel divide
+            let b = Int32(bitPattern: gpr[rt].lo32)
+            if b != 0 {
+                lo = UInt64(bitPattern: Int64(Int32(bitPattern: gpr[rs].lo32) / b))
+                hi = UInt64(bitPattern: Int64(Int32(bitPattern: gpr[rs].lo32) % b))
+            }
+        case 0x0E: // PCPYLD — copy lower doubleword
+            if rd != 0 { gpr[rd] = UInt128(hi: gpr[rs].lo64, lo: gpr[rt].lo64) }
+        case 0x10: // PMADDH — parallel multiply-add halfwords
+            var result = UInt128(hi: 0, lo: 0)
+            for i in 0..<4 {
+                let shift = i * 16
+                let av = Int32(Int16(bitPattern: UInt16(truncatingIfNeeded: (i < 2 ? gpr[rs].lo : gpr[rs].hi) >> ((i % 2) * 16))))
+                let bv = Int32(Int16(bitPattern: UInt16(truncatingIfNeeded: (i < 2 ? gpr[rt].lo : gpr[rt].hi) >> ((i % 2) * 16))))
+                let r = Int16(truncatingIfNeeded: av &* bv)
+                let rv = UInt64(bitPattern: Int64(r)) << UInt64((i % 2) * 16)
+                if i < 2 { result.lo |= rv } else { result.hi |= rv }
+                _ = shift
+            }
+            if rd != 0 { gpr[rd] = result }
+        case 0x12: // PEXEH — exchange halfwords
+            if rd != 0 {
+                let v = gpr[rt].lo32
+                let r = (v & 0xFFFF_0000) | ((v >> 16) & 0xFFFF)
+                gpr[rd] = UInt128(hi: gpr[rt].hi, lo: UInt64(r) | (gpr[rt].lo & 0xFFFF_FFFF_0000_0000))
+            }
+        case 0x13: // PREVH — reverse halfwords
+            if rd != 0 {
+                var lo: UInt64 = 0; var hi: UInt64 = 0
+                for i in 0..<4 {
+                    let hw = (i < 2 ? gpr[rt].lo : gpr[rt].hi) >> UInt64((i % 2) * 16) & 0xFFFF
+                    let dst = (3 - i)
+                    if dst < 2 { lo |= hw << UInt64((dst % 2) * 16) }
+                    else       { hi |= hw << UInt64((dst % 2) * 16) }
+                }
+                gpr[rd] = UInt128(hi: hi, lo: lo)
+            }
+        case 0x14: // PMULTH — parallel multiply halfwords (no accumulate)
+            if rd != 0 {
+                var result = UInt128(hi: 0, lo: 0)
+                for i in 0..<4 {
+                    let av = Int32(Int16(bitPattern: UInt16(truncatingIfNeeded: (i < 2 ? gpr[rs].lo : gpr[rs].hi) >> UInt64((i % 2) * 16))))
+                    let bv = Int32(Int16(bitPattern: UInt16(truncatingIfNeeded: (i < 2 ? gpr[rt].lo : gpr[rt].hi) >> UInt64((i % 2) * 16))))
+                    let r  = UInt64(bitPattern: Int64(av &* bv)) << UInt64((i % 2) * 32)
+                    if i < 2 { result.lo |= r } else { result.hi |= r }
+                }
+                gpr[rd] = result
+            }
+        case 0x15: // PDIVBW — divide all 4 halfwords by BW
+            let bw = Int32(Int16(bitPattern: UInt16(gpr[rt].lo32 & 0xFFFF)))
+            if bw != 0 {
+                var result = UInt128(hi: 0, lo: 0)
+                for i in 0..<4 {
+                    let av = Int32(Int16(bitPattern: UInt16(truncatingIfNeeded: (i < 2 ? gpr[rs].lo : gpr[rs].hi) >> UInt64((i % 2) * 16))))
+                    let r = UInt64(bitPattern: Int64(av / bw)) << UInt64((i % 2) * 16)
+                    if i < 2 { result.lo |= r } else { result.hi |= r }
+                }
+                if rd != 0 { gpr[rd] = result }
+            }
+        case 0x16: // PEXEW — exchange words
+            if rd != 0 {
+                let lo32 = gpr[rt].lo32; let hi32 = UInt32(gpr[rt].hi & 0xFFFF_FFFF)
+                gpr[rd] = UInt128(hi: UInt64(lo32), lo: UInt64(hi32))
+            }
+        case 0x17: // PROT3W — rotate 3 words
+            if rd != 0 {
+                let w0 = gpr[rt].lo32
+                let w1 = UInt32(gpr[rt].hi & 0xFFFF_FFFF)
+                let w2 = UInt32(gpr[rt].hi >> 32)
+                gpr[rd] = UInt128(hi: UInt64(w0), lo: UInt64(w2) | (UInt64(w1) << 32))
+            }
+        default: break
+        }
+    }
+
+    private func decodeMMI3(instruction: UInt32, rs: Int, rt: Int, rd: Int) {
+        let subfunc = (instruction >> 6) & 0x1F
+        switch subfunc {
+        case 0x00: // PMADDUW — parallel multiply-add unsigned
+            let a = UInt64(gpr[rs].lo32) * UInt64(gpr[rt].lo32)
+            let b = UInt64(gpr[rs].hi & 0xFFFF_FFFF) * UInt64(gpr[rt].hi & 0xFFFF_FFFF)
+            lo = lo &+ a; hi = hi &+ b
+            if rd != 0 { gpr[rd] = UInt128(hi: hi, lo: lo) }
+        case 0x03: // PSRAVW (duplicate, already in MMI2)
+            break
+        case 0x08: // PMTHI
+            hi = gpr[rs].hi; hi1 = gpr[rs].lo64
+        case 0x09: // PMTLO
+            lo = gpr[rs].hi; lo1 = gpr[rs].lo64
+        case 0x0A: // PINTEH — interleave even halfwords
+            if rd != 0 {
+                var r: UInt64 = 0
+                for i in 0..<4 {
+                    let sv = (i < 2 ? gpr[rs].lo : gpr[rs].hi) >> UInt64((i % 2) * 32) & 0xFFFF
+                    let tv = (i < 2 ? gpr[rt].lo : gpr[rt].hi) >> UInt64((i % 2) * 32) & 0xFFFF
+                    r |= tv << UInt64(i * 16)
+                    _ = sv
+                }
+                gpr[rd] = UInt128(hi: 0, lo: r)
+            }
+        case 0x0C: // PMULTUW — unsigned 32×32 → 64
+            let a = UInt64(gpr[rs].lo32) * UInt64(gpr[rt].lo32)
+            let b = UInt64(gpr[rs].hi & 0xFFFF_FFFF) * UInt64(gpr[rt].hi & 0xFFFF_FFFF)
+            lo = a; hi = b
+            if rd != 0 { gpr[rd] = UInt128(hi: hi, lo: lo) }
+        case 0x0D: // PDIVUW — unsigned parallel divide
+            let b = gpr[rt].lo32
+            if b != 0 { lo = UInt64(gpr[rs].lo32 / b); hi = UInt64(gpr[rs].lo32 % b) }
+        case 0x0E: // PCPYUD — copy upper doubleword
+            if rd != 0 { gpr[rd] = UInt128(hi: gpr[rt].hi, lo: gpr[rs].hi) }
+        case 0x12: // PEXCH — exchange 16-bit chunks in upper/lower halfwords
+            if rd != 0 {
+                let lo32 = gpr[rt].lo32
+                let r = (lo32 & 0xFF00_00FF) | ((lo32 & 0x00FF_0000) >> 8) | ((lo32 & 0x0000_FF00) << 8)
+                gpr[rd] = UInt128(hi: gpr[rt].hi, lo: UInt64(r) | (gpr[rt].lo & 0xFFFF_FFFF_0000_0000))
+            }
+        case 0x13: // PCPYH — copy halfword
+            if rd != 0 {
+                let hw = gpr[rt].lo & 0xFFFF
+                var lo: UInt64 = 0; var hi: UInt64 = 0
+                for i in 0..<4 { let s = hw << UInt64((i % 2) * 16); if i < 2 { lo |= s } else { hi |= s } }
+                gpr[rd] = UInt128(hi: hi, lo: lo)
+            }
+        case 0x16: // PEXCW — exchange words within doubleword
+            if rd != 0 {
+                let w0 = gpr[rt].lo32; let w1 = UInt32(gpr[rt].lo >> 32)
+                let w2 = UInt32(gpr[rt].hi & 0xFFFF_FFFF); let w3 = UInt32(gpr[rt].hi >> 32)
+                let newLo = UInt64(w0) | (UInt64(w3) << 32)
+                let newHi = UInt64(w2) | (UInt64(w1) << 32)
+                gpr[rd] = UInt128(hi: newHi, lo: newLo)
+            }
+        default: break
+        }
+    }
 
     // MARK: - Instruction Implementations
 
@@ -598,8 +771,50 @@ public final class EmotionEngine {
     private func executeMFC1(rt: Int, fs: Int) { setGPR32(rt, value: Int32(bitPattern: fpr[fs].bitPattern)) }
     private func executeMTC1(rt: Int, fs: Int) { fpr[fs] = Float(bitPattern: gpr32(rt)) }
 
+    // COP2 (VU0 macro mode)
+    // Accessed via op=0x12. RS field selects sub-operation.
+
+    weak var vu0: VectorUnit?
+
+    private func decodeCOP2(rs: Int, rt: Int, rd: Int, instruction: UInt32) {
+        switch rs {
+        case 0x01: // QMFC2 — move 128-bit VF to EE GPR
+            guard let vu = vu0 else { return }
+            let vfIdx = rd & 0x1F
+            let (hi, lo) = vu.readVFasGPR(vfIdx)
+            if rt != 0 { gpr[rt] = UInt128(hi: hi, lo: lo) }
+        case 0x02: // CFC2 — move control register (VI) to EE GPR
+            guard let vu = vu0 else { return }
+            let viIdx = rd & 0x1F
+            setGPR32(rt, value: Int32(bitPattern: vu.readVIasGPR(viIdx)))
+        case 0x05: // QMTC2 — move EE GPR to 128-bit VF
+            guard let vu = vu0 else { return }
+            let vfIdx = rd & 0x1F
+            vu.writeVFfromGPR(vfIdx, hi: gpr[rt].hi, lo: gpr[rt].lo64)
+        case 0x06: // CTC2 — move EE GPR to VI control register
+            guard let vu = vu0 else { return }
+            let viIdx = rd & 0x1F
+            vu.writeVIfromGPR(viIdx, value: gpr32(rt))
+        case 0x08: // BC2 — branch on COP2 condition
+            let nd = (instruction >> 17) & 1
+            let tf = (instruction >> 16) & 1
+            let offset = Int32(Int16(bitPattern: UInt16(instruction & 0xFFFF)))
+            let cond = vu0?.statusFlag != 0
+            let take = tf == 1 ? cond : !cond
+            if take { branchTo(offset: offset) }
+            else if nd == 1 { pc &+= 4 }
+        case 0x10...0x1F: // COP2 special — VU0 macro-mode instruction
+            vu0?.executeMacro(instruction: instruction & 0x07FF_FFFF)
+        default:
+            break
+        }
+    }
+
     // System
-    private func executeSYSCALL() { cop0.triggerException(type: .syscall) }
+    private func executeSYSCALL() {
+        cop0.epc = pc &- 4   // EPC points to the SYSCALL instruction
+        cop0.triggerException(type: .syscall)
+    }
     private func executeSYNC() { /* memory barrier — no-op in interpreter */ }
 
     private func handleUnknownInstruction(op: UInt32, extra: UInt32 = 0) {
