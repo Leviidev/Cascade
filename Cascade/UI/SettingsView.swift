@@ -475,7 +475,7 @@ struct AboutView: View {
                             Text("PS2 Emulator for iOS")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                            Text("Version 1.0.1")
+                            Text("Version 1.0.2")
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
                                 .padding(.horizontal, 12)

@@ -56,6 +56,22 @@ struct LibraryView: View {
                     for url in urls { library.importGame(from: url) }
                 }
             }
+            .overlay(alignment: .bottom) {
+                if library.isImporting {
+                    importingBanner
+                        .padding(.bottom, 24)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.35), value: library.isImporting)
+            .alert("Import Failed", isPresented: Binding(
+                get: { library.importError != nil },
+                set: { if !$0 { library.importError = nil } }
+            )) {
+                Button("OK") { library.importError = nil }
+            } message: {
+                Text(library.importError ?? "")
+            }
             // BIOS file importer
             .fileImporter(
                 isPresented: $showBIOSImporter,
@@ -371,6 +387,24 @@ struct LibraryView: View {
             }
         }
         .padding(40)
+    }
+
+    // MARK: - Importing Banner
+
+    private var importingBanner: some View {
+        HStack(spacing: 12) {
+            ProgressView()
+                .tint(Color.cascadeBlue)
+            Text("Importing game…")
+                .font(.subheadline.bold())
+            Spacer()
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.cascadeBlue.opacity(0.3), lineWidth: 1))
+        .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+        .padding(.horizontal, 24)
     }
 
     // MARK: - No Results State

@@ -14,6 +14,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.0.2",
+          "date": "2026-05-21",
+          "localizedDescription": "• Fixed game importing — large ISOs no longer freeze the app (file copy now runs in background)\n• Fixed library not persisting between launches (Application Support directory creation)\n• Game launch now shows the emulator screen immediately instead of flashing back to the library\n• Pause menu now correctly pauses emulation when opened; backdrop tap resumes\n• Import progress banner shown during large file copies\n• Import errors now surface as an alert instead of silently failing",
+          "downloadURL": "https://github.com/leviidev/Cascade/releases/download/v1.0.2/Cascade.ipa",
+          "size": 5242880,
+          "minOSVersion": "16.0"
+        },
+        {
           "version": "1.0.1",
           "date": "2026-05-21",
           "localizedDescription": "• CHD v5 disc image support (ZLIB / LZMA / NONE)\n• GameShark / CodeBreaker cheat code manager\n• In-game cheat toggle from the pause menu\n• Crash reporter with shareable logs in Settings\n• iOS 16 deployment target — TrollStore sideloading supported\n• Fixed symbolEffect availability guards (iOS 16 / 17 compatible)\n• BIN/CUE multi-track disc support",

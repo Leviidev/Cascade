@@ -56,8 +56,8 @@ public final class GameLibraryManager: ObservableObject {
     @Published var selectedCollectionID: UUID? = nil
     @Published var sortOrder: SortOrder = .title
     @Published var searchText: String = ""
-    @Published var formatFilter: String? = nil   // nil = All, or "iso" / "bin" / "chd"
-    @Published var regionFilter: String? = nil   // nil = All, or "NTSC-U" / "PAL" / "NTSC-J"
+    @Published var formatFilter: String? = nil
+    @Published var regionFilter: String? = nil
     @Published var isImporting: Bool = false
     @Published var importError: String?
 
@@ -141,36 +141,58 @@ public final class GameLibraryManager: ObservableObject {
     }
 
     func save() {
+        try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         try? JSONEncoder().encode(games).write(to: gamesURL)
     }
 
     private func saveCollections() {
+        try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
         try? JSONEncoder().encode(collections).write(to: collectionsURL)
     }
 
-    // MARK: - Import Games
+    // MARK: - Import Games (async — file copy runs on a background thread)
 
     func importGame(from url: URL) {
+        guard !isImporting else { return }
         _ = url.startAccessingSecurityScopedResource()
-        defer { url.stopAccessingSecurityScopedResource() }
+        isImporting = true
+        importError = nil
 
-        try? FileManager.default.createDirectory(at: gamesDir, withIntermediateDirectories: true)
+        let destDir  = gamesDir
+        let ext      = url.pathExtension.lowercased()
 
-        let ext = url.pathExtension.lowercased()
-        do {
-            if ext == "cue" {
-                try importCUE(from: url)
-            } else {
-                try importISO(from: url)
+        Task.detached(priority: .userInitiated) { [weak self] in
+            defer { url.stopAccessingSecurityScopedResource() }
+            do {
+                try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+                let entry: GameEntry
+                if ext == "cue" {
+                    entry = try GameLibraryManager.copyCUE(from: url, to: destDir)
+                } else {
+                    entry = try GameLibraryManager.copyISO(from: url, to: destDir)
+                }
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    if !self.games.contains(where: { $0.id == entry.id }) {
+                        self.games.append(entry)
+                        self.save()
+                    }
+                    self.isImporting = false
+                }
+            } catch {
+                let msg = error.localizedDescription
+                await MainActor.run { [weak self] in
+                    self?.importError = msg
+                    self?.isImporting = false
+                }
             }
-        } catch {
-            importError = error.localizedDescription
         }
     }
 
-    private func importISO(from url: URL) throws {
+    // MARK: - Static Copy Helpers (run off main actor)
+
+    private static func copyISO(from url: URL, to gamesDir: URL) throws -> GameEntry {
         let dest = gamesDir.appendingPathComponent(url.lastPathComponent)
-        if games.contains(where: { $0.url == dest }) { return }
         if !FileManager.default.fileExists(atPath: dest.path) {
             try FileManager.default.copyItem(at: url, to: dest)
         }
@@ -179,13 +201,12 @@ public final class GameLibraryManager: ObservableObject {
         var entry = GameEntry(url: dest, cdvd: cdvd)
         if !cdvd.discID.isEmpty {
             entry.id    = cdvd.discID
-            entry.title = titleFromID(cdvd.discID) ?? entry.title
+            entry.title = titleLookup[cdvd.discID.uppercased()] ?? entry.title
         }
-        games.append(entry)
-        save()
+        return entry
     }
 
-    private func importCUE(from cueURL: URL) throws {
+    private static func copyCUE(from cueURL: URL, to gamesDir: URL) throws -> GameEntry {
         let cueText = (try? String(contentsOf: cueURL, encoding: .utf8)) ?? ""
         var binName: String?
         for line in cueText.components(separatedBy: "\n") {
@@ -200,26 +221,27 @@ public final class GameLibraryManager: ObservableObject {
         if !FileManager.default.fileExists(atPath: cueDest.path) {
             try FileManager.default.copyItem(at: cueURL, to: cueDest)
         }
+
         if let binName {
             let binSrc  = cueURL.deletingLastPathComponent().appendingPathComponent(binName)
             let binDest = gamesDir.appendingPathComponent(binName)
             if FileManager.default.fileExists(atPath: binSrc.path),
                !FileManager.default.fileExists(atPath: binDest.path) {
-                try? FileManager.default.copyItem(at: binSrc, to: binDest)
+                try FileManager.default.copyItem(at: binSrc, to: binDest)
             }
         }
 
-        if games.contains(where: { $0.url == cueDest }) { return }
         let cdvd = CDVD()
         try? cdvd.loadCUE(url: cueDest)
         var entry = GameEntry(url: cueDest, cdvd: cdvd)
         if !cdvd.discID.isEmpty {
             entry.id    = cdvd.discID
-            entry.title = titleFromID(cdvd.discID) ?? entry.title
+            entry.title = titleLookup[cdvd.discID.uppercased()] ?? entry.title
         }
-        games.append(entry)
-        save()
+        return entry
     }
+
+    // MARK: - Game Mutations
 
     func removeGame(_ game: GameEntry) {
         games.removeAll { $0.id == game.id }
@@ -277,27 +299,24 @@ public final class GameLibraryManager: ObservableObject {
         collection.gameIDs.contains(game.id)
     }
 
-    // MARK: - Title lookup
+    // MARK: - Title Lookup
 
-    private func titleFromID(_ id: String) -> String? {
-        let lookup: [String: String] = [
-            "SLUS-20062": "Grand Theft Auto III",
-            "SLUS-20415": "Grand Theft Auto: San Andreas",
-            "SLUS-20184": "Grand Theft Auto: Vice City",
-            "SLUS-20136": "God of War",
-            "SLUS-21236": "God of War II",
-            "SLUS-20762": "Shadow of the Colossus",
-            "SCES-50360": "Ico",
-            "SLUS-20552": "Kingdom Hearts",
-            "SLUS-21005": "Kingdom Hearts II",
-            "SLPS-25088": "Final Fantasy X",
-            "SLUS-20302": "Final Fantasy X",
-            "SLUS-21275": "Final Fantasy XII",
-            "SLUS-20946": "Resident Evil 4",
-            "SLUS-21315": "Metal Gear Solid 3: Snake Eater",
-            "SLUS-20488": "Metal Gear Solid 2: Sons of Liberty",
-            "SLUS-20063": "Devil May Cry",
-        ]
-        return lookup[id.uppercased()]
-    }
+    private static let titleLookup: [String: String] = [
+        "SLUS-20062": "Grand Theft Auto III",
+        "SLUS-20415": "Grand Theft Auto: San Andreas",
+        "SLUS-20184": "Grand Theft Auto: Vice City",
+        "SLUS-20136": "God of War",
+        "SLUS-21236": "God of War II",
+        "SLUS-20762": "Shadow of the Colossus",
+        "SCES-50360": "Ico",
+        "SLUS-20552": "Kingdom Hearts",
+        "SLUS-21005": "Kingdom Hearts II",
+        "SLPS-25088": "Final Fantasy X",
+        "SLUS-20302": "Final Fantasy X",
+        "SLUS-21275": "Final Fantasy XII",
+        "SLUS-20946": "Resident Evil 4",
+        "SLUS-21315": "Metal Gear Solid 3: Snake Eater",
+        "SLUS-20488": "Metal Gear Solid 2: Sons of Liberty",
+        "SLUS-20063": "Devil May Cry",
+    ]
 }

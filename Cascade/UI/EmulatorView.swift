@@ -88,6 +88,7 @@ struct EmulatorView: View {
                 DragGesture(minimumDistance: 20)
                     .onEnded { value in
                         if value.translation.height > 30 {
+                            emulatorState.pause()
                             withAnimation(.spring(response: 0.3)) { showMenu = true }
                         }
                     }
@@ -112,6 +113,7 @@ struct EmulatorMenuView: View {
                 .ignoresSafeArea()
                 .onTapGesture {
                     withAnimation { isPresented = false }
+                    emulatorState.resume()
                 }
 
             // Menu card (iOS 26 Liquid Glass style)

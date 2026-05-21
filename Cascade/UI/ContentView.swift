@@ -9,7 +9,8 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if emulatorState.status == .running || emulatorState.status == .paused {
+            if emulatorState.status == .running || emulatorState.status == .paused
+                || emulatorState.status == .loading {
                 EmulatorView()
                     .transition(.opacity)
             } else {
