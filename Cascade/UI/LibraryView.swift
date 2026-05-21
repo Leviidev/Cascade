@@ -254,7 +254,7 @@ struct LibraryView: View {
                 Image(systemName: "opticaldisc")
                     .font(.system(size: 56))
                     .foregroundStyle(Color.cascadeBlue.gradient)
-                    .symbolEffect(.pulse)
+                    .modifier(PulseIfAvailable())
             }
             VStack(spacing: 8) {
                 Text("No Games Yet")

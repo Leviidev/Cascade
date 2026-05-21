@@ -133,7 +133,7 @@ struct EmulatorMenuView: View {
             Image(systemName: "gamecontroller.fill")
                 .font(.system(size: 32))
                 .foregroundStyle(Color.cascadeBlue.gradient)
-                .symbolEffect(.pulse)
+                .modifier(PulseIfAvailable())
 
             Text(emulatorState.currentGame?.title ?? "Cascade")
                 .font(.headline)

@@ -13,9 +13,12 @@ struct SettingsView: View {
     @AppStorage("eeClockMultiplier") var eeClockMultiplier: Double = 1.0
     @AppStorage("executionMode")     var executionModeRaw: String = ExecutionMode.jit.rawValue
 
+    @ObservedObject private var crashReporter = CrashReporter.shared
     @State private var showBIOSImporter = false
     @State private var showAbout = false
     @State private var showJITInfo = false
+    @State private var showCrashLog = false
+    @State private var crashLogToShare: IdentifiableURL?
 
     private var executionMode: ExecutionMode {
         ExecutionMode(rawValue: executionModeRaw) ?? .jit
@@ -38,6 +41,7 @@ struct SettingsView: View {
                     audioSection
                     backgroundSection
                     controllerSection
+                    diagnosticsSection
                     aboutSection
                 }
                 .scrollContentBackground(.hidden)
@@ -320,6 +324,38 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Diagnostics Section
+
+    private var diagnosticsSection: some View {
+        Section {
+            HStack {
+                Label("Crash Logs", systemImage: "exclamationmark.triangle")
+                Spacer()
+                Text("\(crashReporter.logFiles.count)")
+                    .foregroundStyle(.secondary)
+            }
+
+            if let latest = crashReporter.logFiles.first {
+                Button(action: { crashLogToShare = latest.identifiable }) {
+                    Label("Share Latest Log", systemImage: "square.and.arrow.up")
+                }
+                .sheet(item: $crashLogToShare) { iurl in
+                    ShareSheet(items: [iurl.url])
+                }
+            }
+
+            if !crashReporter.logFiles.isEmpty {
+                Button(role: .destructive, action: { crashReporter.clearAll() }) {
+                    Label("Clear All Logs", systemImage: "trash")
+                }
+            }
+        } header: {
+            Text("Diagnostics")
+        } footer: {
+            Text("Crash logs are saved locally when an emulation error occurs. Share them to help improve Cascade.")
+        }
+    }
+
     // MARK: - About Section
 
     private var aboutSection: some View {
@@ -430,7 +466,7 @@ struct AboutView: View {
                             Image(systemName: "gamecontroller.fill")
                                 .font(.system(size: 48))
                                 .foregroundStyle(Color.cascadeBlue.gradient)
-                                .symbolEffect(.pulse)
+                                .modifier(PulseIfAvailable())
                         }
 
                         VStack(spacing: 6) {

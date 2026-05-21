@@ -49,6 +49,23 @@ docs/
 └── COMPATIBILITY.md
 ```
 
+## What's implemented
+
+| Feature | Status |
+|---|---|
+| Save states (8 slots) | ✅ |
+| Background keep-alive (location services) | ✅ |
+| Portrait mode on-screen controller | ✅ |
+| Collections (virtual folders) | ✅ |
+| BIN/CUE support | ✅ |
+| CHD v5 support (ZLIB/LZMA/NONE) | ✅ |
+| JIT indicator on home screen | ✅ |
+| On-screen DualShock 2 controller | ✅ |
+| Physical/MFi/Bluetooth controller | ✅ |
+| Close game → return to library | ✅ |
+| Crash reporter with log export | ✅ |
+| iOS 16+ deployment (TrollStore support) | ✅ |
+
 ## Building
 
 Building requires **macOS with Xcode 16+**. Use the Replit workflows:
@@ -63,7 +80,8 @@ bash BuildTools/build_ipa.sh --release
 
 ## Requirements (Runtime)
 
-- iOS 18+ device or simulator (deployment target; UI targets iOS 26 Liquid Glass style)
+- iOS 16+ device (deployment target; sideloading via TrollStore supported on iOS 16/17)
+- UI is styled for iOS 26 Liquid Glass where available; gracefully degrades on iOS 16–17
 - A legally dumped PS2 BIOS (`SCPH-70012.bin` recommended)
 - PS2 game images in ISO or BIN format
 

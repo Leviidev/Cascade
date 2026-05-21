@@ -11,8 +11,9 @@ public final class CDVD {
     enum DriveState { case idle, seeking, reading, paused }
     var driveState: DriveState = .idle
 
-    var discURL: URL?
-    var isoData: Data?
+    var discURL:   URL?
+    var isoData:   Data?
+    var chdReader: CHDReader?
 
     // Sector geometry — ISO: 2048 bytes/sector, raw BIN: 2352 bytes/sector
     private var sectorSize: Int   = 2048
@@ -36,6 +37,18 @@ public final class CDVD {
     var seekTarget: UInt32 = 0
 
     // MARK: - Disc Loading
+
+    /// Load a CHD v5 disc image. The CHDReader handles on-the-fly decompression.
+    func loadCHD(url: URL) throws {
+        let data   = try Data(contentsOf: url, options: .mappedIfSafe)
+        chdReader  = try CHDReader(data: data)
+        isoData    = Data()   // empty sentinel so nil-checks pass; reads go via chdReader
+        discURL    = url
+        sectorSize = 2048
+        dataOffset = 0
+        parseISO9660()
+        driveState = .idle
+    }
 
     func loadISO(url: URL) throws {
         isoData    = try Data(contentsOf: url, options: .mappedIfSafe)
@@ -98,16 +111,31 @@ public final class CDVD {
     // MARK: - ISO 9660 Parsing
 
     private func parseISO9660() {
-        guard let data = isoData else { return }
         let pvdOffset = 16 * sectorSize + dataOffset
-        guard data.count > pvdOffset + 882 else { return }
-        let slice = data[pvdOffset..<pvdOffset + 2048]
-        pvd       = PrimaryVolumeDescriptor(data: slice)
-        discID    = readDiscID()
+
+        let slice: Data.SubSequence
+        if let data = isoData, !data.isEmpty {
+            guard data.count > pvdOffset + 882 else { return }
+            slice = data[pvdOffset ..< pvdOffset + 2048]
+        } else if let chd = chdReader {
+            // CHD path: read the PVD sector on-demand
+            guard let pvdData = try? chd.readBytes(at: UInt64(pvdOffset), length: 2048),
+                  pvdData.count >= 882 else { return }
+            pvd        = PrimaryVolumeDescriptor(data: pvdData[pvdData.startIndex...])
+            discID     = readDiscID()
+            discRegion = detectRegion()
+            return
+        } else {
+            return
+        }
+
+        pvd        = PrimaryVolumeDescriptor(data: slice)
+        discID     = readDiscID()
         discRegion = detectRegion()
     }
 
     private func readDiscID() -> String {
+        // For CHD, isoData is an empty Data() sentinel — readFile handles the routing.
         guard let data = isoData else { return "" }
         if let cnfData = readFile(path: "SYSTEM.CNF", data: data) {
             let text = String(data: cnfData, encoding: .ascii) ?? ""
@@ -166,6 +194,11 @@ public final class CDVD {
 
     private func readSectors(lba: UInt32, size: UInt32, from data: Data) -> Data {
         if sectorSize == 2048 {
+            // CHD path — delegate to the CHDReader when the raw Data is empty
+            if data.isEmpty, let chd = chdReader {
+                let offset = UInt64(lba) * 2048
+                return (try? chd.readBytes(at: offset, length: Int(size))) ?? Data()
+            }
             // Standard ISO — direct offset
             let offset = Int(lba) * 2048
             let length = Int(size)

@@ -29,6 +29,9 @@
                 B0000019 /* GameLibraryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000019 /* GameLibraryManager.swift */; };
                 B0000023 /* BackgroundKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000023 /* BackgroundKeepAlive.swift */; };
                 B0000024 /* CheatManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000024 /* CheatManager.swift */; };
+                B0000025 /* CrashReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000025 /* CrashReporter.swift */; };
+                B0000026 /* CHDReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000026 /* CHDReader.swift */; };
+                B0000027 /* ViewHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000027 /* ViewHelpers.swift */; };
                 B0000020 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A0000020 /* Assets.xcassets */; };
                 B0000021 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = A0000021 /* Info.plist */; };
 /* End PBXBuildFile section */
@@ -56,6 +59,9 @@
                 A0000019 /* GameLibraryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameLibraryManager.swift; sourceTree = "<group>"; };
                 A0000023 /* BackgroundKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeepAlive.swift; sourceTree = "<group>"; };
                 A0000024 /* CheatManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheatManager.swift; sourceTree = "<group>"; };
+                A0000025 /* CrashReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReporter.swift; sourceTree = "<group>"; };
+                A0000026 /* CHDReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CHDReader.swift; sourceTree = "<group>"; };
+                A0000027 /* ViewHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewHelpers.swift; sourceTree = "<group>"; };
                 A0000020 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
                 A0000021 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
                 PRODREF01 /* Cascade.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cascade.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -107,6 +113,7 @@
                                 A0000019 /* GameLibraryManager.swift */,
                                 A0000023 /* BackgroundKeepAlive.swift */,
                                 A0000024 /* CheatManager.swift */,
+                                A0000025 /* CrashReporter.swift */,
                                 PS2GROUP,
                         );
                         name = Core;
@@ -126,6 +133,7 @@
                                 A0000015 /* DMAC.swift */,
                                 A0000016 /* PadManager.swift */,
                                 A0000022 /* JITEngine.swift */,
+                                A0000026 /* CHDReader.swift */,
                         );
                         name = PS2;
                         path = PS2;
@@ -140,6 +148,7 @@
                                 A0000005 /* EmulatorView.swift */,
                                 A0000006 /* OnScreenControllerView.swift */,
                                 A0000007 /* SettingsView.swift */,
+                                A0000027 /* ViewHelpers.swift */,
                         );
                         name = UI;
                         path = UI;
@@ -246,6 +255,9 @@
                                 B0000019 /* GameLibraryManager.swift in Sources */,
                                 B0000023 /* BackgroundKeepAlive.swift in Sources */,
                                 B0000024 /* CheatManager.swift in Sources */,
+                                B0000025 /* CrashReporter.swift in Sources */,
+                                B0000026 /* CHDReader.swift in Sources */,
+                                B0000027 /* ViewHelpers.swift in Sources */,
                         );
                         runOnlyForDeploymentPostprocessing = 0;
                 };
@@ -305,7 +317,7 @@
                                 GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
                                 GCC_WARN_UNUSED_FUNCTION = YES;
                                 GCC_WARN_UNUSED_VARIABLE = YES;
-                                IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+                                IPHONEOS_DEPLOYMENT_TARGET = 16.0;
                                 MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
                                 MTL_FAST_MATH = YES;
                                 ONLY_ACTIVE_ARCH = YES;
@@ -341,7 +353,7 @@
                                 GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
                                 GCC_WARN_UNUSED_FUNCTION = YES;
                                 GCC_WARN_UNUSED_VARIABLE = YES;
-                                IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+                                IPHONEOS_DEPLOYMENT_TARGET = 16.0;
                                 MTL_FAST_MATH = YES;
                                 SDKROOT = iphoneos;
                                 SWIFT_COMPILATION_MODE = wholemodule;

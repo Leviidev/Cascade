@@ -62,8 +62,17 @@ public final class EmulatorState: ObservableObject {
         }
         emulator.onError = { [weak self] error in
             DispatchQueue.main.async {
-                self?.errorMessage = error.localizedDescription
-                self?.showError = true
+                guard let self else { return }
+                self.errorMessage = error.localizedDescription
+                self.showError = true
+                CrashReporter.shared.record(
+                    error: error,
+                    game: self.currentGame?.title,
+                    context: [
+                        ("fps",    String(format: "%.1f", self.fps)),
+                        ("status", "\(self.status)"),
+                    ]
+                )
             }
         }
     }
