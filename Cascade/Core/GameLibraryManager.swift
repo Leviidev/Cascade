@@ -56,6 +56,8 @@ public final class GameLibraryManager: ObservableObject {
     @Published var selectedCollectionID: UUID? = nil
     @Published var sortOrder: SortOrder = .title
     @Published var searchText: String = ""
+    @Published var formatFilter: String? = nil   // nil = All, or "iso" / "bin" / "chd"
+    @Published var regionFilter: String? = nil   // nil = All, or "NTSC-U" / "PAL" / "NTSC-J"
     @Published var isImporting: Bool = false
     @Published var importError: String?
 
@@ -64,6 +66,15 @@ public final class GameLibraryManager: ObservableObject {
         case lastPlayed = "Last Played"
         case addedDate  = "Recently Added"
         case favorite   = "Favorites"
+    }
+
+    var activeFilterCount: Int {
+        (formatFilter != nil ? 1 : 0) + (regionFilter != nil ? 1 : 0)
+    }
+
+    func clearFilters() {
+        formatFilter = nil
+        regionFilter = nil
     }
 
     var filteredGames: [GameEntry] {
@@ -82,12 +93,28 @@ public final class GameLibraryManager: ObservableObject {
             }
         }
 
+        if let fmt = formatFilter {
+            base = base.filter { $0.url.pathExtension.lowercased() == fmt }
+        }
+
+        if let region = regionFilter {
+            base = base.filter { $0.region == region }
+        }
+
         switch sortOrder {
         case .title:      return base.sorted { $0.title < $1.title }
         case .lastPlayed: return base.sorted { ($0.lastPlayed ?? .distantPast) > ($1.lastPlayed ?? .distantPast) }
         case .addedDate:  return base.sorted { $0.addedDate > $1.addedDate }
         case .favorite:   return base.sorted { $0.isFavorite && !$1.isFavorite }
         }
+    }
+
+    var availableRegions: [String] {
+        Array(Set(games.map { $0.region })).filter { !$0.isEmpty && $0 != "Unknown" }.sorted()
+    }
+
+    var availableFormats: [String] {
+        Array(Set(games.map { $0.url.pathExtension.lowercased() })).filter { !$0.isEmpty }.sorted()
     }
 
     // MARK: - Persistence URLs
