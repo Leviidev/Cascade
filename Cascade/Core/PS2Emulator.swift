@@ -49,6 +49,11 @@ public final class PS2Emulator: @unchecked Sendable {
     var onFrameReady: ((Data, Int, Int) -> Void)?
     var onError: ((Error) -> Void)?
 
+    // MARK: - Active Cheats
+    // Written from the main thread; read every frame on the emulator thread.
+    // @unchecked Sendable on PS2Emulator covers this access pattern.
+    nonisolated(unsafe) var activeCheats: [CheatCode] = []
+
     // MARK: - Init
 
     init() {
@@ -155,10 +160,37 @@ public final class PS2Emulator: @unchecked Sendable {
         iop.step(count: iopPerFrame)
         dmac.step()
         for _ in 0..<(eePerFrame / 256) { timer.tick() }
+        applyActiveCheatsToRAM()
         signalVBlank()
 
         let frame = gs.getFrameBuffer()
         onFrameReady?(frame, gs.outputWidth, gs.outputHeight)
+    }
+
+    private func applyActiveCheatsToRAM() {
+        for cheat in activeCheats where cheat.enabled {
+            let parts = cheat.code.split(separator: " ")
+            guard parts.count == 2,
+                  let rawAddr = UInt32(parts[0], radix: 16),
+                  let value   = UInt32(parts[1], radix: 16) else { continue }
+            let addr = Int(rawAddr & 0x01FF_FFFF)
+            let type = (rawAddr >> 28) & 0xF
+            switch type {
+            case 0:
+                guard addr < bus.ram.count else { continue }
+                bus.ram[addr] = UInt8(value & 0xFF)
+            case 1:
+                guard addr + 1 < bus.ram.count else { continue }
+                bus.ram[addr]     = UInt8(value & 0xFF)
+                bus.ram[addr + 1] = UInt8((value >> 8) & 0xFF)
+            default:
+                guard addr + 3 < bus.ram.count else { continue }
+                bus.ram[addr]     = UInt8(value & 0xFF)
+                bus.ram[addr + 1] = UInt8((value >> 8) & 0xFF)
+                bus.ram[addr + 2] = UInt8((value >> 16) & 0xFF)
+                bus.ram[addr + 3] = UInt8((value >> 24) & 0xFF)
+            }
+        }
     }
 
     // MARK: - JIT Execution (block recompiler)

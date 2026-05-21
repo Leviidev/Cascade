@@ -5,14 +5,15 @@
 </p>
 
 <p align="center">
-  <strong>A modern PS2 emulator for iPhone and iPad</strong><br/>
-  Built with Swift · iOS 26 · Metal
+  <strong>A PlayStation 2 emulator for iPhone and iPad — written in Swift 6</strong><br/>
+  Native iOS 26 Liquid Glass UI · Metal · CHD v5 · GameShark Cheats
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/iOS-26%2B-blue?style=flat-square&logo=apple" />
+  <img src="https://img.shields.io/badge/iOS-16%2B-blue?style=flat-square&logo=apple" />
   <img src="https://img.shields.io/badge/Swift-6.0-orange?style=flat-square&logo=swift" />
   <img src="https://img.shields.io/badge/Metal-GPU-silver?style=flat-square" />
+  <img src="https://img.shields.io/badge/TrollStore-supported-purple?style=flat-square" />
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" />
 </p>
 
@@ -20,94 +21,202 @@
 
 ## What is Cascade?
 
-Cascade is a PlayStation 2 emulator for iOS devices. It runs PS2 game images (ISO/BIN) directly on your iPhone or iPad with a clean, native iOS 26 Liquid Glass UI. Cascade focuses on performance, accuracy, and a beautiful user experience.
+Cascade is a PlayStation 2 emulator for iOS. It runs PS2 game images directly on your iPhone or iPad with a clean, native Liquid Glass UI. It targets accuracy, performance, and a polished user experience — with full support for sideloading on iOS 16+ via TrollStore, AltStore, or Sideloadly.
+
+---
+
+## Features
+
+| Feature | Status |
+|---|---|
+| MIPS R5900 Emotion Engine interpreter | ✅ |
+| Block-recompiling JIT (with JITless fallback) | ✅ |
+| Software Graphics Synthesizer via Metal | ✅ |
+| 48-voice SPU2 ADPCM audio | ✅ |
+| ISO · BIN/CUE · CHD v5 disc images | ✅ |
+| 8 save-state slots per game | ✅ |
+| GameShark / CodeBreaker cheat codes | ✅ |
+| In-game cheat toggle from pause menu | ✅ |
+| On-screen DualShock 2 controller | ✅ |
+| MFi / Bluetooth physical controller | ✅ |
+| Game library with collections & favourites | ✅ |
+| Crash reporter with shareable logs | ✅ |
+| Background keep-alive | ✅ |
+| iOS 16+ deployment (TrollStore sideloading) | ✅ |
+| iOS 26 Liquid Glass UI | ✅ |
+
+---
+
+## Installation
+
+### Option 1 — AltStore / SideStore source (easiest)
+
+Add the Cascade source URL to AltStore or SideStore:
+
+```
+https://raw.githubusercontent.com/leviidev/Cascade/main/source.json
+```
+
+Search for **Cascade** and tap **Install**.
+
+### Option 2 — TrollStore (iOS 16 / 17, permanent install)
+
+1. Download the latest `Cascade.ipa` from [Releases](https://github.com/leviidev/Cascade/releases).
+2. Open it with **TrollStore** on your device.
+
+### Option 3 — Sideloadly / AltStore direct IPA
+
+1. Download the latest `Cascade.ipa` from [Releases](https://github.com/leviidev/Cascade/releases).
+2. Sideload with Sideloadly, AltStore, or any compatible tool.
 
 ---
 
 ## Getting Started
 
-### Requirements
+### 1. Add your BIOS
 
-- iPhone or iPad running **iOS 26** or later
-- A legally obtained PS2 BIOS file (`SCPH-70012.bin` recommended)
-- PS2 game images in **ISO** or **BIN/CUE** format that you own
+Open **Cascade** → **Settings → BIOS** and import your legally-dumped PS2 BIOS (`SCPH-70012.bin` recommended). Cascade detects the BIOS region automatically.
 
-### Installing Cascade
+### 2. Add games
 
-Cascade is distributed as an unsigned IPA. You can install it using:
+Tap **＋** in the Library tab and import a game image from the Files app. Supported formats: `.iso`, `.bin` (with `.cue`), `.chd`.
 
-- **AltStore** — Connect your device, open AltStore, tap `+` and select the `Cascade.ipa`
-- **Sideloadly** — Drag the IPA into Sideloadly and click Start
-- **TrollStore** (A12+) — Tap the IPA and install directly for a permanent install
+### 3. Play
 
-### First Launch
+Tap any game to launch it. Use the on-screen DualShock 2 controller or connect an MFi/Bluetooth controller (DualSense, DualShock 4, Xbox Series, Switch Pro all work).
 
-1. Open **Cascade** on your device
-2. You'll be prompted to import your **PS2 BIOS** — tap the import button and select your BIOS file
-3. Your BIOS is stored securely in the app's private container
+---
 
-### Adding Games
+## In-Game Controls
 
-- Tap the **＋** button in the Library tab
-- Select your ISO or BIN file from the Files app, AirDrop, or a connected server
-- The game will appear in your library with cover art (fetched automatically when available)
-
-### Playing a Game
-
-- Tap any game in your library to launch it
-- Use the on-screen controller or connect a **MFi / Bluetooth controller**
-- Supported controllers: DualSense, DualShock 4, Xbox Series, Switch Pro
-
-### In-Game Controls
-
-| Action | On-Screen / Controller |
+| Action | How |
 |---|---|
-| Open Menu | Swipe down from top / Menu button |
-| Save State | Menu → Save State → choose slot |
-| Load State | Menu → Load State → choose slot |
-| Screenshot | Menu → Screenshot |
-| Settings | Menu → Settings |
-| Exit Game | Menu → Exit to Library |
+| Open pause menu | Swipe down from top of screen |
+| Save / Load state | Pause menu → Save State / Load State |
+| Toggle cheats | Pause menu → Cheats |
+| Screenshot | Pause menu → Screenshot |
+| Exit to library | Pause menu → Exit to Library |
 
-### Save States
+---
 
-Cascade supports **8 save state slots** per game. States are stored in the app and survive reinstalls (if you back up via iCloud or iTunes).
+## Cheat Codes
 
-### Settings
+Cascade supports **GameShark / CodeBreaker** style codes in the format:
 
-| Setting | Description |
+```
+XXXXXXXX YYYYYYYY
+```
+
+- Bits 31–28 of the address word select write width: `0` = 8-bit, `1` = 16-bit, `2+` = 32-bit.
+- Bits 24–0 are the PS2 RAM offset.
+
+**Managing cheats:**
+- *Before launching* — tap the game in your library → scroll to the **Cheats** section → tap **+**.
+- *Mid-game* — open the pause menu → tap **Cheats** to toggle any code live.
+
+---
+
+## Supported Disc Formats
+
+| Format | Notes |
 |---|---|
-| Resolution Scale | 1× to 4× upscaling via Metal |
-| Frame Limiter | Lock to 30/60 fps or uncapped |
-| Widescreen Hack | Stretch to 16:9 (may cause glitches) |
-| CPU Speed | Adjust EE clock for compatibility |
-| Audio Backend | AVAudio or CoreAudio |
-| Haptics | Haptic feedback on button press |
-| Skin | Choose controller skin style |
+| `.iso` | Single-track ISO 9660 |
+| `.bin` / `.cue` | Multi-track BIN/CUE |
+| `.chd` | CHD v5 — NONE, ZLIB, LZMA compression |
 
 ---
 
 ## Compatibility
 
-Cascade uses the PCSX2 core architecture adapted for iOS. Compatibility varies by game. Check the [compatibility list](docs/COMPATIBILITY.md) for known statuses.
+See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the current game compatibility list.
 
-| Status | Meaning |
-|---|---|
-| ✅ Playable | Runs well, minor issues at most |
-| ⚠️ Ingame | Boots and runs but has issues |
-| 🔶 Menus | Only menus work |
-| ❌ Broken | Crashes or doesn't boot |
+To submit a report, open an [Issue](https://github.com/leviidev/Cascade/issues) with:
+- Game title and Disc ID (shown in the game detail screen)
+- iOS device model and iOS version
+- What happens — boots? crashes? graphical issues?
+- Any crash log exported from **Settings → Diagnostics → Share Latest Log**
+
+---
+
+## Building from Source
+
+Requires **macOS with Xcode 16+**.
+
+```bash
+# Clone
+git clone https://github.com/leviidev/Cascade.git
+cd Cascade
+
+# Build unsigned IPA (Release)
+bash BuildTools/build_ipa.sh --release
+
+# Build unsigned IPA (Debug)
+bash BuildTools/build_ipa.sh --debug
+
+# Build & run in Simulator
+bash BuildTools/build_simulator.sh
+```
+
+Output: `build/IPA/Cascade.ipa`
+
+---
+
+## Project Structure
+
+```
+Cascade/
+├── App/
+│   ├── CascadeApp.swift              # @main entry point
+│   └── Info.plist
+├── Core/
+│   ├── PS2Emulator.swift             # Orchestrator, run loop, cheat application
+│   ├── EmulatorState.swift           # SwiftUI ObservableObject
+│   ├── GameLibraryManager.swift      # Library persistence
+│   ├── CrashReporter.swift           # Error logging + log export
+│   └── PS2/
+│       ├── EmotionEngine.swift       # EE CPU (MIPS R5900)
+│       ├── COP0.swift                # System coprocessor + TLB
+│       ├── MemoryBus.swift           # 32 MB RAM + BIOS + memory map
+│       ├── GraphicsSynthesizer.swift
+│       ├── IOP.swift                 # MIPS R3000A
+│       ├── SPU2.swift                # 48-voice audio
+│       ├── CDVD.swift                # Disc/ISO/CHD reader
+│       ├── CHDReader.swift           # CHD v5 decompressor
+│       ├── DMAC.swift                # DMA + INTC + EETimer
+│       ├── PadManager.swift          # Controller input
+│       └── CheatManager.swift        # GameShark/CodeBreaker cheat engine
+├── UI/
+│   ├── ContentView.swift
+│   ├── LibraryView.swift
+│   ├── GameDetailView.swift
+│   ├── EmulatorView.swift            # Full-screen game + pause menu + cheat sheet
+│   ├── OnScreenControllerView.swift
+│   ├── SettingsView.swift
+│   └── ViewHelpers.swift             # PulseIfAvailable, ShareSheet, IdentifiableURL
+└── Assets.xcassets/
+source.json                           # AltStore / SideStore source
+```
+
+---
+
+## Requirements
+
+- **iOS 16.0 or later** (iPhone or iPad)
+- A legally-dumped PS2 BIOS
+- PS2 game images in ISO, BIN/CUE, or CHD format
+
+The UI targets **iOS 26 Liquid Glass** and degrades gracefully on iOS 16–17.
 
 ---
 
 ## Contributing
 
-PRs and contributions are very welcome! Whether it's a bug fix, a new feature, a compatibility report, or improved documentation — all help is appreciated.
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+Pull requests and compatibility reports are welcome. Please open an issue before starting large features.
 
 ---
 
-## License
+## Legal
 
-Cascade is open source under the **GPL-2.0** license. The PS2 BIOS is proprietary Sony software and is **not** included. You must supply your own legally obtained BIOS.
+Cascade is an emulator. It does not include any Sony intellectual property, BIOS files, or game images. You are responsible for the legality of your BIOS dumps and game images in your jurisdiction.
+
+PlayStation and PlayStation 2 are trademarks of Sony Interactive Entertainment.

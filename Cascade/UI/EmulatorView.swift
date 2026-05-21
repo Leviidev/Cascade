@@ -4,6 +4,7 @@ import SwiftUI
 
 struct EmulatorView: View {
     @EnvironmentObject var emulatorState: EmulatorState
+    @EnvironmentObject var cheatManager: CheatManager
     @State private var showMenu = false
     @State private var menuOpacity: Double = 0
     @State private var controllerVisible = true
@@ -99,8 +100,10 @@ struct EmulatorView: View {
 struct EmulatorMenuView: View {
     @Binding var isPresented: Bool
     @EnvironmentObject var emulatorState: EmulatorState
+    @EnvironmentObject var cheatManager: CheatManager
     @State private var showSaveSlots = false
     @State private var showLoadSlots = false
+    @State private var showCheats    = false
 
     var body: some View {
         ZStack {
@@ -179,6 +182,12 @@ struct EmulatorMenuView: View {
 
             Divider().background(.white.opacity(0.08)).padding(.horizontal, 16)
 
+            menuButton(icon: "wand.and.stars", label: "Cheats", color: .orange) {
+                showCheats = true
+            }
+
+            Divider().background(.white.opacity(0.08)).padding(.horizontal, 16)
+
             menuButton(icon: "xmark.circle.fill", label: "Exit to Library", color: .red) {
                 withAnimation { isPresented = false }
                 emulatorState.stop()
@@ -186,6 +195,9 @@ struct EmulatorMenuView: View {
         }
         .sheet(isPresented: $showSaveSlots) { SaveStateSheet(mode: .save, isPresented: $showSaveSlots) }
         .sheet(isPresented: $showLoadSlots) { SaveStateSheet(mode: .load, isPresented: $showLoadSlots) }
+        .sheet(isPresented: $showCheats) {
+            InGameCheatSheet(isPresented: $showCheats)
+        }
     }
 
     private func menuButton(icon: String, label: String, color: Color, action: @escaping () -> Void) -> some View {
@@ -211,6 +223,80 @@ struct EmulatorMenuView: View {
         UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         withAnimation { isPresented = false }
+    }
+}
+
+// MARK: - In-Game Cheat Sheet
+
+struct InGameCheatSheet: View {
+    @Binding var isPresented: Bool
+    @EnvironmentObject var emulatorState: EmulatorState
+    @EnvironmentObject var cheatManager: CheatManager
+
+    private var discID: String {
+        (emulatorState.currentGame?.discID ?? "").uppercased()
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                let cheats = cheatManager.cheats(for: discID)
+                if cheats.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 44))
+                            .foregroundStyle(.orange.gradient)
+                        Text("No Cheats")
+                            .font(.title3.bold())
+                        Text("Add cheats from the game detail screen in your library.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List(cheats) { cheat in
+                        HStack(spacing: 14) {
+                            Toggle("", isOn: Binding(
+                                get: { cheat.enabled },
+                                set: { _ in
+                                    cheatManager.toggle(cheat, for: discID)
+                                    emulatorState.setActiveCheats(
+                                        cheatManager.cheats(for: discID))
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                }
+                            ))
+                            .labelsHidden()
+                            .tint(.orange)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(cheat.name).font(.headline)
+                                Text(cheat.code)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .listRowBackground(
+                            cheat.enabled
+                                ? Color.orange.opacity(0.07)
+                                : Color(.secondarySystemGroupedBackground)
+                        )
+                    }
+                    .listStyle(.insetGrouped)
+                }
+            }
+            .navigationTitle("Cheats")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { isPresented = false }
+                }
+            }
+        }
+        .onAppear {
+            emulatorState.setActiveCheats(cheatManager.cheats(for: discID))
+        }
     }
 }
 

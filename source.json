@@ -1,0 +1,35 @@
+{
+  "name": "Cascade",
+  "identifier": "com.leviidev.cascade.source",
+  "sourceURL": "https://raw.githubusercontent.com/leviidev/Cascade/main/source.json",
+  "apps": [
+    {
+      "name": "Cascade",
+      "bundleIdentifier": "com.leviidev.cascade",
+      "developerName": "leviidev",
+      "subtitle": "PlayStation 2 Emulator for iPhone & iPad",
+      "localizedDescription": "Cascade is a PlayStation 2 emulator for iPhone and iPad built entirely in Swift.\n\nRun your legally-owned PS2 game library on iOS with a native Liquid Glass interface, on-screen DualShock 2 controller, save states, cheat codes, and more.\n\nFeatures:\n• Full MIPS R5900 Emotion Engine emulation\n• Software rasteriser via Metal\n• 48-voice SPU2 audio\n• ISO, BIN/CUE and CHD v5 disc images\n• 8 save-state slots per game\n• GameShark / CodeBreaker cheat codes\n• Physical MFi & Bluetooth controller support\n• On-screen DualShock 2 controller\n• Game library with collections & favourites\n• Crash reporter with shareable logs\n• iOS 26 Liquid Glass UI — degrades gracefully to iOS 16\n\nRequires a legally-dumped PS2 BIOS and your own game images.",
+      "iconURL": "https://raw.githubusercontent.com/leviidev/Cascade/main/assets/icon.png",
+      "tintColor": "0066FF",
+      "screenshotURLs": [],
+      "versions": [
+        {
+          "version": "1.0.1",
+          "date": "2026-05-21",
+          "localizedDescription": "• CHD v5 disc image support (ZLIB / LZMA / NONE)\n• GameShark / CodeBreaker cheat code manager\n• In-game cheat toggle from the pause menu\n• Crash reporter with shareable logs in Settings\n• iOS 16 deployment target — TrollStore sideloading supported\n• Fixed symbolEffect availability guards (iOS 16 / 17 compatible)\n• BIN/CUE multi-track disc support",
+          "downloadURL": "https://github.com/leviidev/Cascade/releases/download/v1.0.1/Cascade.ipa",
+          "size": 5242880,
+          "minOSVersion": "16.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSLocationWhenInUseUsageDescription": "Used for background keep-alive so your game stays running when you switch apps.",
+          "NSPhotoLibraryAddUsageDescription": "Used to save in-game screenshots to your photo library."
+        }
+      }
+    }
+  ],
+  "news": []
+}

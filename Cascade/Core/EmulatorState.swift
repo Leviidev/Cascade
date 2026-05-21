@@ -202,6 +202,12 @@ public final class EmulatorState: ObservableObject {
         }
     }
 
+    // MARK: - Cheat Management
+
+    func setActiveCheats(_ cheats: [CheatCode]) {
+        emulator.activeCheats = cheats
+    }
+
     func pause() {
         emulator.pause()
         status = .paused
