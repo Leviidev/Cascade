@@ -5,20 +5,73 @@
 
 // ── Privileged register access ────────────────────────────────────────────────
 
+// GS privileged register offsets (relative to 0x1200'0000):
+//  0x00 PMODE    0x10 SMODE1   0x20 SMODE2   0x50 DISPFB1
+//  0x60 DISPLAY1 0x70 DISPFB2  0x80 DISPLAY2 0x90 EXTBUF
+//  0xA0 EXTDATA  0xB0 EXTWRITE 0xC0 BGCOLOR  0x1000 CSR
+//  0x1010 IMR    0x1040 BUSDIR 0x1080 SIGID
+
+static u64 mergeHalf(u64 reg, u32 value, int byteOff) {
+    int sh = (byteOff & 4) ? 32 : 0;
+    return (reg & ~(0xFFFF'FFFFuLL << sh)) | ((u64)value << sh);
+}
+
 u32 GS::readPriv(u32 offset) {
-    switch (offset >> 4) {
-    case 0xA: return (u32)(csr & 0xFFFF'FFFFu);
-    case 0xB: return (u32)(imr & 0xFFFF'FFFFu);
-    default:  return 0u;
+    int sh = (offset & 4) ? 32 : 0;
+    switch (offset & ~7u) {
+    case 0x00: return (u32)((pmode     >> sh) & 0xFFFF'FFFFu);
+    case 0x10: return (u32)((smode1    >> sh) & 0xFFFF'FFFFu);
+    case 0x20: return (u32)((smode2    >> sh) & 0xFFFF'FFFFu);
+    case 0x50: return (u32)((dispfb[0] >> sh) & 0xFFFF'FFFFu);
+    case 0x60: return (u32)((display[0]>> sh) & 0xFFFF'FFFFu);
+    case 0x70: return (u32)((dispfb[1] >> sh) & 0xFFFF'FFFFu);
+    case 0x80: return (u32)((display[1]>> sh) & 0xFFFF'FFFFu);
+    case 0xC0: return (u32)((bgcolor   >> sh) & 0xFFFF'FFFFu);
+    case 0x1000: {
+        // CSR: return FIFO=empty (bits 14:13=01), SIGNAL=0, FINISH=0, VBLANK=varies
+        u64 r = csr | 0x2000u; // FIFO empty
+        return (u32)((r >> sh) & 0xFFFF'FFFFu);
+    }
+    case 0x1010: return (u32)((imr >> sh) & 0xFFFF'FFFFu);
+    default:     return 0u;
     }
 }
 
 void GS::writePriv(u32 offset, u32 value) {
-    switch (offset >> 4) {
-    case 0x0: { int sh=((offset&4)?32:0); pmode=(pmode&~(0xFFFF'FFFFuLL<<sh))|((u64)value<<sh); break; }
-    case 0xA: csr = (u64)value; break;
-    case 0xB: imr = (u64)value; break;
-    default:  break;
+    switch (offset & ~7u) {
+    case 0x00: pmode    = mergeHalf(pmode,    value, offset); break;
+    case 0x10: smode1   = mergeHalf(smode1,   value, offset); break;
+    case 0x20: smode2   = mergeHalf(smode2,   value, offset); break;
+    case 0x50: dispfb[0]= mergeHalf(dispfb[0],value, offset);
+        // Update output dimensions from DISPFB1
+        outputWidth  = std::max(1, (int)((dispfb[0] >> 9) & 0x7FF) * 64);
+        outputHeight = std::max(1, (int)((dispfb[0] >> 0) & 0x1FF));
+        if (outputWidth  > 1920) outputWidth  = 640;
+        if (outputHeight > 1080) outputHeight = 448;
+        break;
+    case 0x60: display[0]= mergeHalf(display[0],value, offset);
+        // DX/DY/DW/DH in display[0] — optionally pull width/height
+        {
+            u64 d = display[0];
+            int dw = (int)((d >> 23) & 0xFFF) + 1;
+            int dh = (int)((d >> 44) & 0x7FF) + 1;
+            int magh = (int)((d >> 38) & 0xF) + 1;
+            int magv = (int)((d >> 42) & 0x3) + 1;
+            int w = dw / std::max(1, magh);
+            int h = dh / std::max(1, magv);
+            if (w > 0 && w <= 1920) outputWidth  = w;
+            if (h > 0 && h <= 1080) outputHeight = h;
+        }
+        break;
+    case 0x70: dispfb[1]= mergeHalf(dispfb[1],value, offset); break;
+    case 0x80: display[1]= mergeHalf(display[1],value, offset); break;
+    case 0xC0: bgcolor  = mergeHalf(bgcolor,  value, offset); break;
+    case 0x1000:
+        // CSR: writing clears latched status bits
+        csr = (csr & ~((u64)value & 0x1Bu)); // clear SIGNAL/FINISH/VSINT/HSINT
+        break;
+    case 0x1010: imr = mergeHalf(imr, value, offset); break;
+    default: break;
     }
 }
 
@@ -339,7 +392,7 @@ void GS::bresenhamLine(const Vertex& v0, const Vertex& v1) {
 
 void GS::plotPixel(i32 x, i32 y, u8 r, u8 g, u8 b, u8 a, u32 z, int ctx) {
     // Scissor test
-    u32 scis = reg_SCISSOR[ctx & 1];
+    u64 scis = reg_SCISSOR[ctx & 1];
     i32 scx0 = (i32)(scis & 0x7FF);
     i32 scx1 = (i32)((scis >> 16) & 0x7FF);
     i32 scy0 = (i32)((scis >> 32) & 0x7FF);

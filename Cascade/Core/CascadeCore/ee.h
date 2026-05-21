@@ -104,6 +104,9 @@ private:
     void decodeMMI2(u32 instr);
     void decodeMMI3(u32 instr);
 
+    // Execute delay-slot instruction then jump to target (no recursion)
+    void jumpAbsolute(u32 target);
+
     void triggerException(int excCode, bool inBranch = false);
     void raiseReservedInstruction();
 

@@ -21,22 +21,30 @@ void EE::reset() {
 }
 
 // ── Step ──────────────────────────────────────────────────────────────────────
+// COP0 Count increments every 2 EE bus cycles.
 
 void EE::step(int count) {
     for (int i = 0; i < count; i++) {
-        // Check pending interrupt
-        if (!(cop0[COP0_Status] & SR_EXL) &&
-            !(cop0[COP0_Status] & SR_ERL) &&
-             (cop0[COP0_Status] & SR_IE)  &&
-             (cop0[COP0_Status] & SR_EIE)) {
-            // Interrupt pending check (IM bits vs IP bits in Cause)
+        // Increment COP0 Count every 2 cycles
+        if ((cycles & 1) == 0) {
+            cop0[COP0_Count]++;
+            // Timer-compare interrupt (COP0 bit 7 in IM/IP = IP7)
+            if (cop0[COP0_Count] == cop0[COP0_Compare]) {
+                cop0[COP0_Cause] |= (1u << 15); // IP7 (timer)
+            }
+        }
+
+        // Check pending interrupts (IE && !EXL && !ERL && EIE)
+        if ((cop0[COP0_Status] & (SR_IE | SR_EXL | SR_ERL | SR_EIE)) == (SR_IE | SR_EIE)) {
             u32 im = (cop0[COP0_Status] >> 8) & 0xFF;
             u32 ip = (cop0[COP0_Cause]  >> 8) & 0xFF;
             if (im & ip) {
                 triggerException(0);
+                cycles++;
                 continue;
             }
         }
+
         executeOne();
         cycles++;
     }
@@ -57,7 +65,7 @@ void EE::executeOne() {
 
 void EE::triggerException(int excCode, bool inBranch) {
     if (!(cop0[COP0_Status] & SR_EXL)) {
-        cop0[COP0_EPC] = inBranch ? pc - 4 : pc;
+        cop0[COP0_EPC] = inBranch ? (pc - 8) : (pc - 4);
         if (inBranch) cop0[COP0_Cause] |= (1u << 31);
         else          cop0[COP0_Cause] &= ~(1u << 31);
     }
@@ -68,6 +76,10 @@ void EE::triggerException(int excCode, bool inBranch) {
     bool bev = (cop0[COP0_Status] >> 22) & 1;
     pc = bev ? 0xBFC0'0200u : 0x8000'0080u;
     nextPC = pc + 4;
+}
+
+void EE::raiseReservedInstruction() {
+    triggerException(10); // RI
 }
 
 // ── Memory helpers ────────────────────────────────────────────────────────────
@@ -83,6 +95,23 @@ void EE::sw (u32 a, u32 v) { bus->write32(a, v); }
 void EE::sd (u32 a, u64 v) { bus->write64(a, v); }
 void EE::sq (u32 a, u128 v){ bus->write128(a & ~15u, v); }
 
+// ── Branch helpers ────────────────────────────────────────────────────────────
+// All branches use the delay-slot mechanism: set inDelaySlot + nextPC,
+// then fall through; the NEXT call to executeOne() will run the delay-slot
+// instruction and then advance pc → nextPC.
+
+// Jump/branch absolute — execute delay slot inline then set PC
+void EE::jumpAbsolute(u32 target) {
+    inDelaySlot = false;
+    // Fetch + run the delay-slot instruction at the current pc
+    u32 dsInstr = bus->read32(pc);
+    pc += 4;
+    decode(dsInstr);
+    // Now commit the jump
+    pc     = target;
+    nextPC = target + 4;
+}
+
 // ── Instruction decode ────────────────────────────────────────────────────────
 
 void EE::decode(u32 instr) {
@@ -97,21 +126,22 @@ void EE::decode(u32 instr) {
     u32 imm26 = instr & 0x03FF'FFFFu;
     u32 uimm  = instr & 0xFFFFu;
 
+    (void)shamt; (void)funct; (void)rd;
+
     switch (op) {
     case 0x00: decodeSpecial(instr); return;
     case 0x01: decodeRegImm(instr);  return;
 
     case 0x02: { // J
         u32 target = (pc & 0xF000'0000u) | (imm26 << 2);
-        executeOne(); // delay slot
-        pc = target; inDelaySlot = false; nextPC = pc + 4;
+        jumpAbsolute(target);
         return;
     }
     case 0x03: { // JAL
         u32 target = (pc & 0xF000'0000u) | (imm26 << 2);
-        setGPR32(31, pc + 4);
-        executeOne(); // delay slot
-        pc = target; inDelaySlot = false; nextPC = pc + 4;
+        u32 retAddr = pc + 4; // return addr = instruction after delay slot
+        setGPR32(31, retAddr);
+        jumpAbsolute(target);
         return;
     }
 
@@ -136,9 +166,8 @@ void EE::decode(u32 instr) {
         if (taken) branchTo(target); return;
     }
 
-    case 0x08: { // ADDI (trap on overflow, but most code doesn't trap)
-        i32 res = (i32)getGPR32(rs) + imm16;
-        setGPR32(rt, (u32)res); return;
+    case 0x08: { // ADDI (trap on overflow — we skip trap for performance)
+        setGPR32(rt, (u32)((i32)getGPR32(rs) + imm16)); return;
     }
     case 0x09: { // ADDIU
         setGPR32(rt, (u32)((i32)getGPR32(rs) + imm16)); return;
@@ -158,47 +187,46 @@ void EE::decode(u32 instr) {
     case 0x11: decodeCOP1(instr); return;
     case 0x12: decodeCOP2(instr); return;
 
-    case 0x14: { // BEQL
+    case 0x14: { // BEQL (branch-likely)
         bool taken = (gpr[rs].lo == gpr[rt].lo);
         u32 target = (u32)((i32)pc + (imm16 << 2));
-        if (taken) branchTo(target); else { pc += 4; } return;
+        if (taken) branchTo(target); else pc += 4; return;
     }
     case 0x15: { // BNEL
         bool taken = (gpr[rs].lo != gpr[rt].lo);
         u32 target = (u32)((i32)pc + (imm16 << 2));
-        if (taken) branchTo(target); else { pc += 4; } return;
+        if (taken) branchTo(target); else pc += 4; return;
     }
     case 0x16: { // BLEZL
         bool taken = ((i64)gpr[rs].lo <= 0);
         u32 target = (u32)((i32)pc + (imm16 << 2));
-        if (taken) branchTo(target); else { pc += 4; } return;
+        if (taken) branchTo(target); else pc += 4; return;
     }
     case 0x17: { // BGTZL
         bool taken = ((i64)gpr[rs].lo > 0);
         u32 target = (u32)((i32)pc + (imm16 << 2));
-        if (taken) branchTo(target); else { pc += 4; } return;
+        if (taken) branchTo(target); else pc += 4; return;
     }
 
     case 0x18: { // DADDI
-        i64 res = (i64)gpr[rs].lo + (i64)imm16;
-        setGPR64(rt, (u64)res); return;
+        setGPR64(rt, (u64)((i64)gpr[rs].lo + (i64)imm16)); return;
     }
     case 0x19: { // DADDIU
         setGPR64(rt, gpr[rs].lo + (u64)(i64)imm16); return;
     }
-    case 0x1A: { // LDL (load doubleword left, unaligned)
-        u32 a = (u32)(getGPR32(rs) + imm16);
+    case 0x1A: { // LDL (load doubleword left)
+        u32 a = (u32)((i32)getGPR32(rs) + imm16);
         int sh = (a & 7) * 8;
         u64 mem = ld(a & ~7u);
         u64 mask = ~0uLL << sh;
         setGPR64(rt, (gpr[rt].lo & ~mask) | (mem << (sh & 63)));
         return;
     }
-    case 0x1B: { // LDR (load doubleword right, unaligned)
-        u32 a = (u32)(getGPR32(rs) + imm16);
+    case 0x1B: { // LDR (load doubleword right)
+        u32 a = (u32)((i32)getGPR32(rs) + imm16);
         int sh = (7 - (a & 7)) * 8;
         u64 mem = ld(a & ~7u);
-        u64 mask = ~0uLL >> sh;
+        u64 mask = ~0uLL >> (sh & 63);
         setGPR64(rt, (gpr[rt].lo & ~mask) | (mem >> (sh & 63)));
         return;
     }
@@ -229,8 +257,8 @@ void EE::decode(u32 instr) {
         u32 a = (u32)((i32)getGPR32(rs) + imm16);
         int sh = (3 - (a & 3)) * 8;
         u32 mem = lw(a & ~3u);
-        u32 mask = ~0u >> sh;
-        setGPR32(rt, (getGPR32(rt) & ~mask) | (mem >> sh));
+        u32 mask = ~0u >> (sh & 31);
+        setGPR32(rt, (getGPR32(rt) & ~mask) | (mem >> (sh & 31)));
         return;
     }
     case 0x27: { // LWU
@@ -276,33 +304,59 @@ void EE::decode(u32 instr) {
     }
     case 0x2F: return; // CACHE — ignored
 
-    case 0x31: { // LWC1 (load to FPU)
+    case 0x31: { // LWC1
         u32 v = lw((u32)((i32)getGPR32(rs)+imm16));
         memcpy(&fpr[rt & 31], &v, 4); return;
+    }
+    case 0x36: { // LQC2 (load 128-bit to VU0 VF register)
+        if (vu0) {
+            u128 v = lq((u32)((i32)getGPR32(rs) + imm16));
+            u32 x, y, z, w;
+            x = (u32)(v.lo & 0xFFFF'FFFFu);
+            y = (u32)(v.lo >> 32);
+            z = (u32)(v.hi & 0xFFFF'FFFFu);
+            w = (u32)(v.hi >> 32);
+            memcpy(&vu0->vf[rt & 31].x, &x, 4);
+            memcpy(&vu0->vf[rt & 31].y, &y, 4);
+            memcpy(&vu0->vf[rt & 31].z, &z, 4);
+            memcpy(&vu0->vf[rt & 31].w, &w, 4);
+        }
+        return;
     }
     case 0x37: { setGPR64(rt, ld((u32)((i32)getGPR32(rs)+imm16))); return; } // LD
     case 0x39: { // SWC1
         u32 v; memcpy(&v, &fpr[rt & 31], 4);
         sw((u32)((i32)getGPR32(rs)+imm16), v); return;
     }
+    case 0x3E: { // SQC2 (store 128-bit from VU0 VF register)
+        if (vu0) {
+            u32 x, y, z, w;
+            memcpy(&x, &vu0->vf[rt & 31].x, 4);
+            memcpy(&y, &vu0->vf[rt & 31].y, 4);
+            memcpy(&z, &vu0->vf[rt & 31].z, 4);
+            memcpy(&w, &vu0->vf[rt & 31].w, 4);
+            u128 v;
+            v.lo = (u64)x | ((u64)y << 32);
+            v.hi = (u64)z | ((u64)w << 32);
+            sq((u32)((i32)getGPR32(rs) + imm16), v);
+        }
+        return;
+    }
     case 0x3F: { sd((u32)((i32)getGPR32(rs)+imm16), gpr[rt].lo); return; } // SD
 
     default:
-        // Unknown opcode — ignore
         break;
     }
-
-    (void)shamt; (void)funct; (void)rd;
 }
 
 // ── SPECIAL (R-type) ──────────────────────────────────────────────────────────
 
 void EE::decodeSpecial(u32 instr) {
-    int rs = (instr >> 21) & 0x1F;
-    int rt = (instr >> 16) & 0x1F;
-    int rd = (instr >> 11) & 0x1F;
-    u32 sh = (instr >>  6) & 0x1F;
-    int fn = (instr >>  0) & 0x3F;
+    int rs    = (instr >> 21) & 0x1F;
+    int rt    = (instr >> 16) & 0x1F;
+    int rd    = (instr >> 11) & 0x1F;
+    u32 sh    = (instr >>  6) & 0x1F;
+    int fn    = (instr >>  0) & 0x3F;
 
     switch (fn) {
     case 0x00: setGPR32(rd, getGPR32(rt) << sh); return; // SLL
@@ -313,15 +367,14 @@ void EE::decodeSpecial(u32 instr) {
     case 0x07: setGPR32(rd, (u32)((i32)getGPR32(rt) >> (gpr[rs].lo & 31))); return; // SRAV
     case 0x08: { // JR
         u32 target = getGPR32(rs);
-        executeOne();
-        pc = target; inDelaySlot = false; nextPC = pc + 4;
+        jumpAbsolute(target);
         return;
     }
     case 0x09: { // JALR
         u32 target = getGPR32(rs);
-        setGPR32(rd, pc + 4);
-        executeOne();
-        pc = target; inDelaySlot = false; nextPC = pc + 4;
+        u32 retAddr = pc + 4;
+        setGPR32(rd ? rd : 31, retAddr);
+        jumpAbsolute(target);
         return;
     }
     case 0x0C: triggerException(8); return; // SYSCALL
@@ -348,12 +401,19 @@ void EE::decodeSpecial(u32 instr) {
     }
     case 0x1A: { // DIV
         i32 n = (i32)getGPR32(rs), d = (i32)getGPR32(rt);
-        if (d) { lo = sign_extend32((u32)(n/d)); hi = sign_extend32((u32)(n%d)); }
+        if (d != 0 && !(n == (i32)0x80000000u && d == -1)) {
+            lo = sign_extend32((u32)(n / d));
+            hi = sign_extend32((u32)(n % d));
+        } else if (d == 0) {
+            lo = n < 0 ? 1u : (u64)(i64)-1LL;
+            hi = sign_extend32((u32)n);
+        }
         return;
     }
     case 0x1B: { // DIVU
         u32 n = getGPR32(rs), d = getGPR32(rt);
-        if (d) { lo = sign_extend32(n/d); hi = sign_extend32(n%d); }
+        if (d) { lo = sign_extend32(n / d); hi = sign_extend32(n % d); }
+        else   { lo = 0xFFFF'FFFFu; hi = sign_extend32(n); }
         return;
     }
     case 0x20: setGPR32(rd, getGPR32(rs) + getGPR32(rt)); return; // ADD
@@ -364,7 +424,7 @@ void EE::decodeSpecial(u32 instr) {
     case 0x25: setGPR64(rd, gpr[rs].lo | gpr[rt].lo); return; // OR
     case 0x26: setGPR64(rd, gpr[rs].lo ^ gpr[rt].lo); return; // XOR
     case 0x27: setGPR64(rd, ~(gpr[rs].lo | gpr[rt].lo)); return; // NOR
-    case 0x28: setGPR32(rd, sa); return; // MFSA
+    case 0x28: if (rd) setGPR64(rd, sa); return; // MFSA
     case 0x29: sa = gpr[rs].lo & 0x1Fu; return; // MTSA
     case 0x2A: setGPR32(rd, (i64)gpr[rs].lo < (i64)gpr[rt].lo ? 1 : 0); return; // SLT
     case 0x2B: setGPR32(rd, gpr[rs].lo < gpr[rt].lo ? 1 : 0); return; // SLTU
@@ -372,6 +432,7 @@ void EE::decodeSpecial(u32 instr) {
     case 0x2D: setGPR64(rd, gpr[rs].lo + gpr[rt].lo); return; // DADDU
     case 0x2E: setGPR64(rd, gpr[rs].lo - gpr[rt].lo); return; // DSUB
     case 0x2F: setGPR64(rd, gpr[rs].lo - gpr[rt].lo); return; // DSUBU
+    case 0x30: triggerException(0x20); return; // TGE — trap
     case 0x38: setGPR64(rd, gpr[rt].lo << sh); return; // DSLL
     case 0x3A: setGPR64(rd, gpr[rt].lo >> sh); return; // DSRL
     case 0x3B: setGPR64(rd, (u64)((i64)gpr[rt].lo >> sh)); return; // DSRA
@@ -419,20 +480,37 @@ void EE::decodeCOP0(u32 instr) {
         setGPR32(rt, cop0[rd & 31]);
         return;
     case 0x04: // MTC0
-        if (rd == COP0_Status) cop0[COP0_Status] = getGPR32(rt);
-        else if (rd == COP0_Cause) cop0[COP0_Cause] = getGPR32(rt) & 0xB00u;
-        else if (rd == COP0_Count) cop0[COP0_Count] = getGPR32(rt);
-        else if (rd == COP0_Compare) cop0[COP0_Compare] = getGPR32(rt);
-        else cop0[rd & 31] = getGPR32(rt);
+        switch (rd) {
+        case COP0_Status:  cop0[COP0_Status]  = getGPR32(rt); break;
+        case COP0_Cause:   cop0[COP0_Cause]   = getGPR32(rt) & 0x0000'B300u; break;
+        case COP0_Count:   cop0[COP0_Count]   = getGPR32(rt); break;
+        case COP0_Compare:
+            cop0[COP0_Compare] = getGPR32(rt);
+            // Clear timer interrupt when Compare is written
+            cop0[COP0_Cause] &= ~(1u << 15);
+            break;
+        case COP0_EntryHi:
+        case COP0_EntryLo0:
+        case COP0_EntryLo1:
+        case COP0_PageMask:
+        case COP0_Index:
+        case COP0_Wired:
+        case COP0_Context:
+            cop0[rd & 31] = getGPR32(rt); break;
+        default:
+            cop0[rd & 31] = getGPR32(rt); break;
+        }
         return;
     case 0x10: // CO instructions
         switch (fn) {
+        case 0x01: return; // TLBR  (stub)
         case 0x02: return; // TLBWI (stub)
         case 0x06: return; // TLBWR (stub)
         case 0x08: return; // TLBP  (stub)
         case 0x18: { // ERET
             if (cop0[COP0_Status] & SR_ERL) {
-                pc = 0xBFC0'0000u; // ErrorEPC stub
+                pc = cop0[COP0_ErrorEPC];
+                if (pc == 0) pc = 0xBFC0'0000u;
                 cop0[COP0_Status] &= ~SR_ERL;
             } else {
                 pc = cop0[COP0_EPC];
@@ -440,9 +518,11 @@ void EE::decodeCOP0(u32 instr) {
             }
             inDelaySlot = false;
             nextPC = pc + 4;
+            // GPR 0 always 0
+            gpr[0] = u128{};
             return;
         }
-        case 0x38: cop0[COP0_Status] |= SR_EIE; return; // EI
+        case 0x38: cop0[COP0_Status] |=  SR_EIE; return; // EI
         case 0x39: cop0[COP0_Status] &= ~SR_EIE; return; // DI
         default: return;
         }
@@ -456,7 +536,7 @@ void EE::decodeCOP0(u32 instr) {
 void EE::decodeCOP1(u32 instr) {
     int rs = (instr >> 21) & 0x1F;
     int rt = (instr >> 16) & 0x1F;
-    int rd = (instr >> 11) & 0x1F; // fs field for FPU
+    int rd = (instr >> 11) & 0x1F;
     int fn = instr & 0x3F;
     int fs = (instr >> 11) & 0x1F;
     int ft = rt;
@@ -465,6 +545,15 @@ void EE::decodeCOP1(u32 instr) {
     switch (rs) {
     case 0x00: { u32 v; memcpy(&v, &fpr[rd], 4); setGPR32(rt, v); return; } // MFC1
     case 0x04: { u32 v = getGPR32(rt); memcpy(&fpr[rd], &v, 4); return; }   // MTC1
+    case 0x02: { // CFC1
+        if (rd == 31) setGPR32(rt, fcr31);
+        else setGPR32(rt, 0);
+        return;
+    }
+    case 0x06: { // CTC1
+        if (rd == 31) fcr31 = getGPR32(rt);
+        return;
+    }
     case 0x08: { // BC1
         bool nd   = (instr >> 17) & 1;
         bool tf   = (instr >> 16) & 1;
@@ -480,42 +569,32 @@ void EE::decodeCOP1(u32 instr) {
         case 0x00: fpr[fd] = fpr[fs] + fpr[ft]; return; // ADD.S
         case 0x01: fpr[fd] = fpr[fs] - fpr[ft]; return; // SUB.S
         case 0x02: fpr[fd] = fpr[fs] * fpr[ft]; return; // MUL.S
-        case 0x03: fpr[fd] = (fpr[ft] != 0.f) ? fpr[fs] / fpr[ft] : 0.f; return; // DIV.S
+        case 0x03: fpr[fd] = (fpr[ft] != 0.f) ? fpr[fs] / fpr[ft] : (fpr[fs] >= 0.f ? 3.402823466e+38f : -3.402823466e+38f); return; // DIV.S
         case 0x04: fpr[fd] = std::sqrt(std::abs(fpr[fs])); return; // SQRT.S
         case 0x05: fpr[fd] = std::abs(fpr[fs]); return; // ABS.S
         case 0x06: fpr[fd] = fpr[fs]; return; // MOV.S
         case 0x07: fpr[fd] = -fpr[fs]; return; // NEG.S
-        case 0x16: fpr[fd] = std::sqrt(std::abs(fpr[fs])); return; // RSQRT.S
+        case 0x16: { // RSQRT.S
+            f32 s = std::abs(fpr[ft]);
+            fpr[fd] = (s > 0.f) ? fpr[fs] / std::sqrt(s) : 0.f;
+            return;
+        }
         case 0x18: fpAcc = fpr[fs] * fpr[ft]; return; // ADDA.S
         case 0x19: fpAcc = fpr[fs] - fpr[ft]; return; // SUBA.S
         case 0x1A: fpAcc = fpr[fs] * fpr[ft]; return; // MULA.S
-        case 0x1C: fpAcc += fpr[fs] * fpr[ft]; return; // MADD.S (ACC += FS*FT)
-        case 0x1D: fpAcc -= fpr[fs] * fpr[ft]; return; // MSUB.S
-        case 0x1E: fpr[fd] = fpAcc + fpr[fs] * fpr[ft]; return; // MADDA.S
-        case 0x1F: fpr[fd] = fpAcc - fpr[fs] * fpr[ft]; return; // MSUBA.S
+        case 0x1C: fpr[fd] = fpAcc + fpr[fs] * fpr[ft]; return; // MADD.S
+        case 0x1D: fpr[fd] = fpAcc - fpr[fs] * fpr[ft]; return; // MSUB.S
+        case 0x1E: fpAcc += fpr[fs] * fpr[ft]; return; // MADDA.S
+        case 0x1F: fpAcc -= fpr[fs] * fpr[ft]; return; // MSUBA.S
         case 0x24: { // CVT.W.S
-            i32 v = fpr[fs] != fpr[fs] ? 0 : (i32)clampf(fpr[fs], -2147483648.f, 2147483647.f);
+            i32 v = (fpr[fs] != fpr[fs]) ? 0 : (i32)clampf(fpr[fs], -2147483648.f, 2147483647.f);
             memcpy(&fpr[fd], &v, 4); return;
         }
-        case 0x28: { // C.F.S (false)
-            fcr31 &= ~(1u << 23); return;
-        }
-        case 0x29: { // C.UN.S
-            bool r = fpr[fs] != fpr[fs] || fpr[ft] != fpr[ft];
-            if (r) fcr31 |= (1u<<23); else fcr31 &= ~(1u<<23); return;
-        }
-        case 0x2A: { // C.EQ.S
-            bool r = fpr[fs] == fpr[ft];
-            if (r) fcr31 |= (1u<<23); else fcr31 &= ~(1u<<23); return;
-        }
-        case 0x2C: { // C.LT.S
-            bool r = fpr[fs] < fpr[ft];
-            if (r) fcr31 |= (1u<<23); else fcr31 &= ~(1u<<23); return;
-        }
-        case 0x2E: { // C.LE.S
-            bool r = fpr[fs] <= fpr[ft];
-            if (r) fcr31 |= (1u<<23); else fcr31 &= ~(1u<<23); return;
-        }
+        case 0x28: fcr31 &= ~(1u << 23); return; // C.F.S
+        case 0x29: { bool r = (fpr[fs] != fpr[fs] || fpr[ft] != fpr[ft]); if (r) fcr31 |= (1u<<23); else fcr31 &= ~(1u<<23); return; } // C.UN.S
+        case 0x2A: { bool r = (fpr[fs] == fpr[ft]); if (r) fcr31 |= (1u<<23); else fcr31 &= ~(1u<<23); return; } // C.EQ.S
+        case 0x2C: { bool r = (fpr[fs] < fpr[ft]);  if (r) fcr31 |= (1u<<23); else fcr31 &= ~(1u<<23); return; } // C.LT.S
+        case 0x2E: { bool r = (fpr[fs] <= fpr[ft]); if (r) fcr31 |= (1u<<23); else fcr31 &= ~(1u<<23); return; } // C.LE.S
         default: break;
         }
         return;
@@ -536,30 +615,60 @@ void EE::decodeCOP2(u32 instr) {
     if (!vu0) return;
     int rs = (instr >> 21) & 0x1F;
     int rt = (instr >> 16) & 0x1F;
-    int id = (instr >> 11) & 0x1F; // VF register index
+    int id = (instr >> 11) & 0x1F;
 
     switch (rs) {
-    case 0x01: { // QMFC2
-        u128 v;
-        v.lo = ((u64)vu0->vf[id & 31].x) | ((u64)vu0->vf[id & 31].y << 32);
+    case 0x01: { // QMFC2 — read 128-bit VF into GPR
         u32 xi, yi, zi, wi;
         memcpy(&xi, &vu0->vf[id&31].x, 4);
         memcpy(&yi, &vu0->vf[id&31].y, 4);
         memcpy(&zi, &vu0->vf[id&31].z, 4);
         memcpy(&wi, &vu0->vf[id&31].w, 4);
+        u128 v;
         v.lo = (u64)xi | ((u64)yi << 32);
         v.hi = (u64)zi | ((u64)wi << 32);
         setGPR128(rt, v);
         return;
     }
-    case 0x05: { // QMTC2
-        u32 xi = getGPR32(rt); // simplified: lower 32 bits
-        vu0->vf[id&31].x = *(f32*)&xi;
+    case 0x05: { // QMTC2 — write 128-bit GPR into VF
+        u32 xi = (u32)(gpr[rt].lo & 0xFFFF'FFFFu);
+        u32 yi = (u32)(gpr[rt].lo >> 32);
+        u32 zi = (u32)(gpr[rt].hi & 0xFFFF'FFFFu);
+        u32 wi = (u32)(gpr[rt].hi >> 32);
+        memcpy(&vu0->vf[id&31].x, &xi, 4);
+        memcpy(&vu0->vf[id&31].y, &yi, 4);
+        memcpy(&vu0->vf[id&31].z, &zi, 4);
+        memcpy(&vu0->vf[id&31].w, &wi, 4);
+        return;
+    }
+    case 0x02: { // CFC2 — read VU0 control register into GPR
+        u32 val = 0;
+        switch (id & 31) {
+        case 16: val = vu0->statusFlag; break;
+        case 17: val = vu0->macFlag;    break;
+        case 18: val = vu0->clipFlag;   break;
+        case 20: { u32 Ib; memcpy(&Ib, &vu0->I, 4); val = Ib; break; }
+        case 21: { u32 qb; memcpy(&qb, &vu0->q, 4); val = qb; break; }
+        default: break;
+        }
+        setGPR32(rt, val);
+        return;
+    }
+    case 0x06: { // CTC2 — write GPR to VU0 control register
+        u32 val = getGPR32(rt);
+        switch (id & 31) {
+        case 16: vu0->statusFlag = val; break;
+        case 17: vu0->macFlag    = val; break;
+        case 18: vu0->clipFlag   = val; break;
+        case 20: memcpy(&vu0->I, &val, 4); break;
+        case 21: memcpy(&vu0->q, &val, 4); break;
+        default: break;
+        }
         return;
     }
     default:
-        // Forward upper+lower encoded VU0 micro instructions
-        vu0->executeUpper(instr); // private but we call run() instead
+        // Execute as VU0 macro-mode upper instruction
+        vu0->executeUpper(instr);
         break;
     }
 }
@@ -613,17 +722,20 @@ void EE::decodeMMI(u32 instr) {
     }
     case 0x1A: { // DIV1
         i32 n = (i32)getGPR32(rs), d = (i32)getGPR32(rt);
-        if (d) { lo1 = sign_extend32((u32)(n/d)); hi1 = sign_extend32((u32)(n%d)); }
+        if (d != 0 && !(n == (i32)0x80000000u && d == -1)) {
+            lo1 = sign_extend32((u32)(n / d));
+            hi1 = sign_extend32((u32)(n % d));
+        }
         return;
     }
     case 0x1B: { // DIVU1
         u32 n = getGPR32(rs), d = getGPR32(rt);
-        if (d) { lo1 = sign_extend32(n/d); hi1 = sign_extend32(n%d); }
+        if (d) { lo1 = sign_extend32(n / d); hi1 = sign_extend32(n % d); }
         return;
     }
     case 0x28: decodeMMI1(instr); return;
     case 0x29: decodeMMI3(instr); return;
-    case 0x30: { // PMFHL (various sub)
+    case 0x30: { // PMFHL
         u32 sub = (instr >> 6) & 0x1F;
         if (!rd) return;
         switch (sub) {
@@ -644,10 +756,10 @@ void EE::decodeMMI(u32 instr) {
             u64& half = (i < 4) ? r.lo : r.hi;
             u64 src   = (i < 4) ? gpr[rt].lo : gpr[rt].hi;
             int off = (i & 3) * 16;
-            u16 v = (u16)(src >> off) << (shamt & 15);
+            u16 v = (u16)((u16)(src >> off) << (shamt & 15));
             half |= (u64)v << off;
         }
-        setGPR128(rd, r); return;
+        if (rd) setGPR128(rd, r); return;
     }
     case 0x36: { // PSRLH
         u128 r{};
@@ -655,10 +767,10 @@ void EE::decodeMMI(u32 instr) {
             u64& half = (i < 4) ? r.lo : r.hi;
             u64 src   = (i < 4) ? gpr[rt].lo : gpr[rt].hi;
             int off = (i & 3) * 16;
-            u16 v = (u16)(src >> off) >> (shamt & 15);
+            u16 v = (u16)((u16)(src >> off) >> (shamt & 15));
             half |= (u64)v << off;
         }
-        setGPR128(rd, r); return;
+        if (rd) setGPR128(rd, r); return;
     }
     case 0x37: { // PSRAH
         u128 r{};
@@ -666,316 +778,432 @@ void EE::decodeMMI(u32 instr) {
             u64& half = (i < 4) ? r.lo : r.hi;
             u64 src   = (i < 4) ? gpr[rt].lo : gpr[rt].hi;
             int off = (i & 3) * 16;
-            i16 v = (i16)(src >> off) >> (shamt & 15);
+            i16 v = (i16)((i16)(src >> off) >> (shamt & 15));
             half |= (u64)(u16)v << off;
         }
-        setGPR128(rd, r); return;
+        if (rd) setGPR128(rd, r); return;
     }
     case 0x3C: { // PSLLW
         u128 r{ gpr[rt].lo << (shamt & 31), gpr[rt].hi << (shamt & 31) };
-        setGPR128(rd, r); return;
+        if (rd) setGPR128(rd, r); return;
     }
     case 0x3E: { // PSRLW
         u128 r{ gpr[rt].lo >> (shamt & 31), gpr[rt].hi >> (shamt & 31) };
-        setGPR128(rd, r); return;
+        if (rd) setGPR128(rd, r); return;
     }
     case 0x3F: { // PSRAW
         u128 r{
             (u64)((i64)gpr[rt].lo >> (shamt & 31)),
             (u64)((i64)gpr[rt].hi >> (shamt & 31))
         };
-        setGPR128(rd, r); return;
+        if (rd) setGPR128(rd, r); return;
     }
     default: break;
     }
-    (void)shamt;
 }
+
+// ── MMI0 ──────────────────────────────────────────────────────────────────────
 
 void EE::decodeMMI0(u32 instr) {
-    int rs = (instr >> 21) & 0x1F, rt = (instr >> 16) & 0x1F, rd = (instr >> 11) & 0x1F;
-    int sub = (instr >> 6) & 0x1F;
-    if (!rd) return;
-    const u128& a = gpr[rs]; const u128& b = gpr[rt];
-
-    auto pw = [](u64 a, u64 b, auto op) -> u64 {
-        return (u64)(u32)op((u32)a, (u32)b) | ((u64)(u32)op((u32)(a>>32), (u32)(b>>32)) << 32);
-    };
-    auto ph = [](u64 a, u64 b, auto op) -> u64 {
-        u64 r = 0;
-        for (int i = 0; i < 4; i++) {
-            u16 av = (u16)(a >> (i*16)), bv = (u16)(b >> (i*16));
-            r |= (u64)(u16)op(av, bv) << (i*16);
-        }
-        return r;
-    };
-    auto pb = [](u64 a, u64 b, auto op) -> u64 {
-        u64 r = 0;
-        for (int i = 0; i < 8; i++) {
-            u8 av = (u8)(a >> (i*8)), bv = (u8)(b >> (i*8));
-            r |= (u64)(u8)op(av, bv) << (i*8);
-        }
-        return r;
-    };
-    auto satw = [](i64 v) -> u32 { return (u32)(v > 2147483647LL ? 2147483647LL : v < -2147483648LL ? -2147483648LL : v); };
-    auto sath = [](i32 v) -> u16 { return (u16)(v > 32767 ? 32767 : v < -32768 ? -32768 : v); };
-    auto satb = [](i16 v) -> u8  { return (u8) (v > 127  ? 127  : v < -128  ? -128  : v); };
+    int rs    = (instr >> 21) & 0x1F;
+    int rt    = (instr >> 16) & 0x1F;
+    int rd    = (instr >> 11) & 0x1F;
+    int sub   = (instr >>  6) & 0x1F;
 
     switch (sub) {
-    case 0x00: setGPR128(rd, u128(pw(a.lo,b.lo,[](u32 x,u32 y){return x+y;}), pw(a.hi,b.hi,[](u32 x,u32 y){return x+y;}))); return; // PADDW
-    case 0x01: setGPR128(rd, u128(pw(a.lo,b.lo,[](u32 x,u32 y){return x-y;}), pw(a.hi,b.hi,[](u32 x,u32 y){return x-y;}))); return; // PSUBW
+    case 0x00: { // PADDW
+        u128 r;
+        r.lo = (u64)(u32)((u32)(gpr[rs].lo) + (u32)(gpr[rt].lo))
+             | ((u64)(u32)((u32)(gpr[rs].lo >> 32) + (u32)(gpr[rt].lo >> 32)) << 32);
+        r.hi = (u64)(u32)((u32)(gpr[rs].hi) + (u32)(gpr[rt].hi))
+             | ((u64)(u32)((u32)(gpr[rs].hi >> 32) + (u32)(gpr[rt].hi >> 32)) << 32);
+        if (rd) setGPR128(rd, r); return;
+    }
+    case 0x01: { // PSUBW
+        u128 r;
+        r.lo = (u64)(u32)((u32)(gpr[rs].lo) - (u32)(gpr[rt].lo))
+             | ((u64)(u32)((u32)(gpr[rs].lo >> 32) - (u32)(gpr[rt].lo >> 32)) << 32);
+        r.hi = (u64)(u32)((u32)(gpr[rs].hi) - (u32)(gpr[rt].hi))
+             | ((u64)(u32)((u32)(gpr[rs].hi >> 32) - (u32)(gpr[rt].hi >> 32)) << 32);
+        if (rd) setGPR128(rd, r); return;
+    }
     case 0x02: { // PCGTW
         u128 r{};
-        for (int i=0;i<2;i++) { u64 al=(i?a.hi:a.lo),bl=(i?b.hi:b.lo),rl=0;
-            for(int j=0;j<2;j++){i32 av=(i32)(al>>(j*32)),bv=(i32)(bl>>(j*32)); rl|=(u64)(av>bv?0xFFFFFFFFu:0u)<<(j*32);} if(i)r.hi=rl; else r.lo=rl; }
-        setGPR128(rd,r); return;
+        for (int i = 0; i < 4; i++) {
+            int off = (i & 1) * 32;
+            u64& rhalf = (i < 2) ? r.lo : r.hi;
+            u64 sh = (i < 2) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 2) ? gpr[rt].lo : gpr[rt].hi;
+            i32 sv = (i32)(sh >> off), tv = (i32)(th >> off);
+            rhalf |= (u64)(sv > tv ? 0xFFFF'FFFFu : 0u) << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x03: { u128 r{pw(a.lo,b.lo,[](u32 x,u32 y){return std::max(x,y);}),pw(a.hi,b.hi,[](u32 x,u32 y){return std::max(x,y);})}; setGPR128(rd,r); return; } // PMAXW
-    case 0x04: setGPR128(rd, u128(ph(a.lo,b.lo,[](u16 x,u16 y){return (u16)(x+y);}), ph(a.hi,b.hi,[](u16 x,u16 y){return (u16)(x+y);}))); return; // PADDH
-    case 0x05: setGPR128(rd, u128(ph(a.lo,b.lo,[](u16 x,u16 y){return (u16)(x-y);}), ph(a.hi,b.hi,[](u16 x,u16 y){return (u16)(x-y);}))); return; // PSUBH
-    case 0x08: setGPR128(rd, u128(pb(a.lo,b.lo,[](u8 x,u8 y){return (u8)(x+y);}), pb(a.hi,b.hi,[](u8 x,u8 y){return (u8)(x+y);}))); return; // PADDB
-    case 0x09: setGPR128(rd, u128(pb(a.lo,b.lo,[](u8 x,u8 y){return (u8)(x-y);}), pb(a.hi,b.hi,[](u8 x,u8 y){return (u8)(x-y);}))); return; // PSUBB
-    case 0x10: { // PADDSW (saturate)
+    case 0x03: { // PMAXW
         u128 r{};
-        auto doHalf = [&](u64 al, u64 bl) -> u64 {
-            u64 rl = 0;
-            for (int j=0;j<2;j++) {i64 v=(i64)(i32)(al>>(j*32))+(i64)(i32)(bl>>(j*32)); rl|=(u64)satw(v)<<(j*32);}
-            return rl;
-        };
-        r.lo = doHalf(a.lo, b.lo); r.hi = doHalf(a.hi, b.hi);
-        setGPR128(rd,r); return;
+        for (int i = 0; i < 4; i++) {
+            int off = (i & 1) * 32;
+            u64& rhalf = (i < 2) ? r.lo : r.hi;
+            u64 sh = (i < 2) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 2) ? gpr[rt].lo : gpr[rt].hi;
+            i32 sv = (i32)(sh >> off), tv = (i32)(th >> off);
+            rhalf |= (u64)(u32)(sv > tv ? sv : tv) << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x11: { // PSUBSW
-        u128 r{}; auto doHalf=[&](u64 al,u64 bl)->u64{ u64 rl=0; for(int j=0;j<2;j++){i64 v=(i64)(i32)(al>>(j*32))-(i64)(i32)(bl>>(j*32)); rl|=(u64)satw(v)<<(j*32);} return rl; };
-        r.lo=doHalf(a.lo,b.lo); r.hi=doHalf(a.hi,b.hi); setGPR128(rd,r); return;
+    case 0x08: { // PADDH (packed add halfword)
+        u128 r{};
+        for (int i = 0; i < 8; i++) {
+            int off = (i & 3) * 16;
+            u64& rhalf = (i < 4) ? r.lo : r.hi;
+            u64 sh = (i < 4) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 4) ? gpr[rt].lo : gpr[rt].hi;
+            u16 sum = (u16)(sh >> off) + (u16)(th >> off);
+            rhalf |= (u64)sum << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x12: { // PEXTLW: rd = {rt_hi_w1, rs_hi_w1, rt_lo_w0, rs_lo_w0}
-        u128 r{ (u64)(u32)a.lo | ((u64)(u32)b.lo << 32), (u64)(u32)(a.lo>>32) | ((u64)(u32)(b.lo>>32) << 32) };
-        setGPR128(rd,r); return;
+    case 0x09: { // PSUBH
+        u128 r{};
+        for (int i = 0; i < 8; i++) {
+            int off = (i & 3) * 16;
+            u64& rhalf = (i < 4) ? r.lo : r.hi;
+            u64 sh = (i < 4) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 4) ? gpr[rt].lo : gpr[rt].hi;
+            u16 dif = (u16)(sh >> off) - (u16)(th >> off);
+            rhalf |= (u64)dif << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x13: { // PPACW: pack even words
-        u128 r{ (u64)(u32)a.lo | ((u64)(u32)(a.hi) << 32), (u64)(u32)b.lo | ((u64)(u32)(b.hi) << 32) };
-        setGPR128(rd,r); return;
+    case 0x0A: { // PCGTH
+        u128 r{};
+        for (int i = 0; i < 8; i++) {
+            int off = (i & 3) * 16;
+            u64& rhalf = (i < 4) ? r.lo : r.hi;
+            u64 sh = (i < 4) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 4) ? gpr[rt].lo : gpr[rt].hi;
+            i16 sv = (i16)(sh >> off), tv = (i16)(th >> off);
+            rhalf |= (u64)(u16)(sv > tv ? 0xFFFF : 0) << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x14: { // PADDSH
-        u128 r{}; auto doHalf=[&](u64 al,u64 bl)->u64{ u64 rl=0; for(int j=0;j<4;j++){i32 v=(i32)(i16)(al>>(j*16))+(i32)(i16)(bl>>(j*16)); rl|=(u64)(u16)sath(v)<<(j*16);} return rl; };
-        r.lo=doHalf(a.lo,b.lo); r.hi=doHalf(a.hi,b.hi); setGPR128(rd,r); return;
+    case 0x0B: { // PMAXH
+        u128 r{};
+        for (int i = 0; i < 8; i++) {
+            int off = (i & 3) * 16;
+            u64& rhalf = (i < 4) ? r.lo : r.hi;
+            u64 sh = (i < 4) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 4) ? gpr[rt].lo : gpr[rt].hi;
+            i16 sv = (i16)(sh >> off), tv = (i16)(th >> off);
+            rhalf |= (u64)(u16)(sv > tv ? sv : tv) << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x15: { // PSUBSH
-        u128 r{}; auto doHalf=[&](u64 al,u64 bl)->u64{ u64 rl=0; for(int j=0;j<4;j++){i32 v=(i32)(i16)(al>>(j*16))-(i32)(i16)(bl>>(j*16)); rl|=(u64)(u16)sath(v)<<(j*16);} return rl; };
-        r.lo=doHalf(a.lo,b.lo); r.hi=doHalf(a.hi,b.hi); setGPR128(rd,r); return;
+    case 0x10: { // PADDB
+        u128 r{};
+        for (int i = 0; i < 16; i++) {
+            int off = (i & 7) * 8;
+            u64& rhalf = (i < 8) ? r.lo : r.hi;
+            u64 sh = (i < 8) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 8) ? gpr[rt].lo : gpr[rt].hi;
+            u8 sum = (u8)(sh >> off) + (u8)(th >> off);
+            rhalf |= (u64)sum << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x16: { // PEXTLH
-        u128 r{ (u64)(u16)a.lo|((u64)(u16)b.lo<<16)|((u64)(u16)(a.lo>>16)<<32)|((u64)(u16)(b.lo>>16)<<48),
-                (u64)(u16)(a.lo>>32)|((u64)(u16)(b.lo>>32)<<16)|((u64)(u16)(a.lo>>48)<<32)|((u64)(u16)(b.lo>>48)<<48) };
-        setGPR128(rd,r); return;
+    case 0x11: { // PSUBB
+        u128 r{};
+        for (int i = 0; i < 16; i++) {
+            int off = (i & 7) * 8;
+            u64& rhalf = (i < 8) ? r.lo : r.hi;
+            u64 sh = (i < 8) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 8) ? gpr[rt].lo : gpr[rt].hi;
+            u8 dif = (u8)(sh >> off) - (u8)(th >> off);
+            rhalf |= (u64)dif << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x17: { // PPACH
-        u128 r{}; u64 rl=0,rh=0;
-        for(int i=0;i<4;i++){rl|=(u64)(u16)(a.lo>>(i*16))<<(i*16);} // wrong, fix below
-        rl = (u64)(u16)a.lo | ((u64)(u16)(a.lo>>32)<<16) | ((u64)(u16)a.hi<<32) | ((u64)(u16)(a.hi>>32)<<48);
-        rh = (u64)(u16)b.lo | ((u64)(u16)(b.lo>>32)<<16) | ((u64)(u16)b.hi<<32) | ((u64)(u16)(b.hi>>32)<<48);
-        r = {rl,rh}; setGPR128(rd,r); return;
+    case 0x18: { // PAND
+        if (rd) setGPR128(rd, gpr[rs] & gpr[rt]); return;
     }
-    case 0x18: { // PADDSB
-        u128 r{}; auto doHalf=[&](u64 al,u64 bl)->u64{ u64 rl=0; for(int j=0;j<8;j++){i16 v=(i16)(i8)(al>>(j*8))+(i16)(i8)(bl>>(j*8)); rl|=(u64)(u8)satb(v)<<(j*8);} return rl; };
-        r.lo=doHalf(a.lo,b.lo); r.hi=doHalf(a.hi,b.hi); setGPR128(rd,r); return;
+    case 0x19: { // POR
+        if (rd) setGPR128(rd, gpr[rs] | gpr[rt]); return;
     }
-    case 0x19: { // PSUBSB
-        u128 r{}; auto doHalf=[&](u64 al,u64 bl)->u64{ u64 rl=0; for(int j=0;j<8;j++){i16 v=(i16)(i8)(al>>(j*8))-(i16)(i8)(bl>>(j*8)); rl|=(u64)(u8)satb(v)<<(j*8);} return rl; };
-        r.lo=doHalf(a.lo,b.lo); r.hi=doHalf(a.hi,b.hi); setGPR128(rd,r); return;
+    case 0x1A: { // PXOR
+        if (rd) setGPR128(rd, gpr[rs] ^ gpr[rt]); return;
     }
-    case 0x1A: { // PEXTLB
-        u128 r{ (u64)(u8)a.lo|((u64)(u8)b.lo<<8)|((u64)(u8)(a.lo>>8)<<16)|((u64)(u8)(b.lo>>8)<<24)|
-                ((u64)(u8)(a.lo>>16)<<32)|((u64)(u8)(b.lo>>16)<<40)|((u64)(u8)(a.lo>>24)<<48)|((u64)(u8)(b.lo>>24)<<56),
-                (u64)(u8)(a.lo>>32)|((u64)(u8)(b.lo>>32)<<8)|((u64)(u8)(a.lo>>40)<<16)|((u64)(u8)(b.lo>>40)<<24)|
-                ((u64)(u8)(a.lo>>48)<<32)|((u64)(u8)(b.lo>>48)<<40)|((u64)(u8)(a.lo>>56)<<48)|((u64)(u8)(b.lo>>56)<<56) };
-        setGPR128(rd,r); return;
-    }
-    case 0x1B: { // PPACB — pack low bytes
-        u64 rl=0,rh=0;
-        for(int i=0;i<8;i++) rl|=(u64)(u8)(a.lo>>(i*8))<<(i*8); // wrong but close
-        rl=0; for(int i=0;i<4;i++) rl|=(u64)(u8)(a.lo>>(i*16))<<(i*8);
-        rl|=(u64)(u8)(a.hi>>(0*16))<<(4*8); rl|=(u64)(u8)(a.hi>>(1*16))<<(5*8);
-        rl|=(u64)(u8)(a.hi>>(2*16))<<(6*8); rl|=(u64)(u8)(a.hi>>(3*16))<<(7*8);
-        rh=0; for(int i=0;i<4;i++) rh|=(u64)(u8)(b.lo>>(i*16))<<(i*8);
-        rh|=(u64)(u8)(b.hi>>(0*16))<<(4*8); rh|=(u64)(u8)(b.hi>>(1*16))<<(5*8);
-        rh|=(u64)(u8)(b.hi>>(2*16))<<(6*8); rh|=(u64)(u8)(b.hi>>(3*16))<<(7*8);
-        setGPR128(rd,u128(rl,rh)); return;
+    case 0x1B: { // PNOR
+        if (rd) setGPR128(rd, ~(gpr[rs] | gpr[rt])); return;
     }
     default: break;
     }
 }
 
+// ── MMI1 ──────────────────────────────────────────────────────────────────────
+
 void EE::decodeMMI1(u32 instr) {
-    int rs = (instr>>21)&0x1F, rt=(instr>>16)&0x1F, rd=(instr>>11)&0x1F;
-    int sub = (instr>>6)&0x1F;
-    if (!rd) return;
-    const u128& a=gpr[rs]; const u128& b=gpr[rt];
+    int rs  = (instr >> 21) & 0x1F;
+    int rt  = (instr >> 16) & 0x1F;
+    int rd  = (instr >> 11) & 0x1F;
+    int sub = (instr >>  6) & 0x1F;
 
     switch (sub) {
     case 0x01: { // PABSW
         u128 r{};
-        for(int i=0;i<2;i++){u64& rl=(i?r.hi:r.lo);u64 sl=(i?a.hi:a.lo);
-            for(int j=0;j<2;j++){i32 v=(i32)(sl>>(j*32)); rl|=(u64)(u32)std::abs(v)<<(j*32);}}
-        setGPR128(rd,r); return;
+        for (int i = 0; i < 4; i++) {
+            int off = (i & 1) * 32;
+            u64& rhalf = (i < 2) ? r.lo : r.hi;
+            u64 sh = (i < 2) ? gpr[rt].lo : gpr[rt].hi;
+            i32 v = (i32)(sh >> off);
+            rhalf |= (u64)(u32)(v < 0 ? -v : v) << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x03: { // PMINW (signed)
+    case 0x02: { // PCEQW
         u128 r{};
-        auto pw=[](u64 a,u64 b)->u64{ return (u64)(u32)std::min((i32)(u32)a,(i32)(u32)b)|((u64)(u32)std::min((i32)(u32)(a>>32),(i32)(u32)(b>>32))<<32); };
-        r.lo=pw(a.lo,b.lo); r.hi=pw(a.hi,b.hi); setGPR128(rd,r); return;
+        for (int i = 0; i < 4; i++) {
+            int off = (i & 1) * 32;
+            u64& rhalf = (i < 2) ? r.lo : r.hi;
+            u64 sh = (i < 2) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 2) ? gpr[rt].lo : gpr[rt].hi;
+            bool eq = ((u32)(sh >> off) == (u32)(th >> off));
+            rhalf |= (u64)(eq ? 0xFFFF'FFFFu : 0u) << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x05: { // PABSH
+    case 0x03: { // PMINW
         u128 r{};
-        for(int k=0;k<2;k++){u64& rl=(k?r.hi:r.lo);u64 sl=(k?a.hi:a.lo);
-            for(int j=0;j<4;j++){i16 v=(i16)(sl>>(j*16));rl|=(u64)(u16)std::abs((int)v)<<(j*16);}}
-        setGPR128(rd,r); return;
+        for (int i = 0; i < 4; i++) {
+            int off = (i & 1) * 32;
+            u64& rhalf = (i < 2) ? r.lo : r.hi;
+            u64 sh = (i < 2) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 2) ? gpr[rt].lo : gpr[rt].hi;
+            i32 sv = (i32)(sh >> off), tv = (i32)(th >> off);
+            rhalf |= (u64)(u32)(sv < tv ? sv : tv) << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x07: { // PMINH (signed)
+    case 0x09: { // PABSH
         u128 r{};
-        auto ph=[](u64 a,u64 b)->u64{ u64 r=0; for(int j=0;j<4;j++){i16 av=(i16)(a>>(j*16)),bv=(i16)(b>>(j*16)); r|=(u64)(u16)std::min(av,bv)<<(j*16);} return r; };
-        r.lo=ph(a.lo,b.lo); r.hi=ph(a.hi,b.hi); setGPR128(rd,r); return;
+        for (int i = 0; i < 8; i++) {
+            int off = (i & 3) * 16;
+            u64& rhalf = (i < 4) ? r.lo : r.hi;
+            u64 sh = (i < 4) ? gpr[rt].lo : gpr[rt].hi;
+            i16 v = (i16)(sh >> off);
+            rhalf |= (u64)(u16)(v < 0 ? -v : v) << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x10: { // PCEQW
+    case 0x0A: { // PCEQH
         u128 r{};
-        auto pw=[](u64 a,u64 b)->u64{ return ((u32)a==(u32)b?0xFFFFFFFFull:0ull)|(((u32)(a>>32)==(u32)(b>>32)?0xFFFFFFFFull:0ull)<<32); };
-        r.lo=pw(a.lo,b.lo); r.hi=pw(a.hi,b.hi); setGPR128(rd,r); return;
+        for (int i = 0; i < 8; i++) {
+            int off = (i & 3) * 16;
+            u64& rhalf = (i < 4) ? r.lo : r.hi;
+            u64 sh = (i < 4) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 4) ? gpr[rt].lo : gpr[rt].hi;
+            bool eq = ((u16)(sh >> off) == (u16)(th >> off));
+            rhalf |= (u64)(u16)(eq ? 0xFFFF : 0) << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x11: { // PEXTRW
-        u128 r{ (u64)(u32)(a.lo>>32)|((u64)(u32)(a.hi>>32)<<32), (u64)(u32)b.lo|((u64)(u32)(b.hi)<<32) };
-        setGPR128(rd,r); return;
-    }
-    case 0x14: { // PCEQH
+    case 0x0B: { // PMINH
         u128 r{};
-        auto ph=[](u64 a,u64 b)->u64{ u64 r=0; for(int j=0;j<4;j++){bool eq=(u16)(a>>(j*16))==(u16)(b>>(j*16)); r|=(u64)(eq?0xFFFFull:0ull)<<(j*16);} return r; };
-        r.lo=ph(a.lo,b.lo); r.hi=ph(a.hi,b.hi); setGPR128(rd,r); return;
+        for (int i = 0; i < 8; i++) {
+            int off = (i & 3) * 16;
+            u64& rhalf = (i < 4) ? r.lo : r.hi;
+            u64 sh = (i < 4) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 4) ? gpr[rt].lo : gpr[rt].hi;
+            i16 sv = (i16)(sh >> off), tv = (i16)(th >> off);
+            rhalf |= (u64)(u16)(sv < tv ? sv : tv) << off;
+        }
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x18: { // PCEQB
+    case 0x12: { // PCEQB
         u128 r{};
-        auto pb=[](u64 a,u64 b)->u64{ u64 r=0; for(int j=0;j<8;j++){bool eq=(u8)(a>>(j*8))==(u8)(b>>(j*8)); r|=(u64)(eq?0xFFull:0ull)<<(j*8);} return r; };
-        r.lo=pb(a.lo,b.lo); r.hi=pb(a.hi,b.hi); setGPR128(rd,r); return;
+        for (int i = 0; i < 16; i++) {
+            int off = (i & 7) * 8;
+            u64& rhalf = (i < 8) ? r.lo : r.hi;
+            u64 sh = (i < 8) ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = (i < 8) ? gpr[rt].lo : gpr[rt].hi;
+            bool eq = ((u8)(sh >> off) == (u8)(th >> off));
+            rhalf |= (u64)(u8)(eq ? 0xFF : 0) << off;
+        }
+        if (rd) setGPR128(rd, r); return;
+    }
+    case 0x1A: { // PEXEW — extend even words
+        if (!rd) return;
+        gpr[rd].lo = (u64)(u32)(gpr[rt].lo) | ((u64)(u32)(gpr[rt].hi) << 32);
+        gpr[rd].hi = 0;
+        return;
+    }
+    case 0x1B: { // PROT3W
+        if (!rd) return;
+        u32 w0 = (u32)(gpr[rt].lo);
+        u32 w1 = (u32)(gpr[rt].lo >> 32);
+        u32 w2 = (u32)(gpr[rt].hi);
+        u32 w3 = (u32)(gpr[rt].hi >> 32);
+        gpr[rd].lo = (u64)w1 | ((u64)w2 << 32);
+        gpr[rd].hi = (u64)w3 | ((u64)w0 << 32);
+        return;
     }
     default: break;
     }
-    (void)a; (void)b;
+    (void)rs; (void)rt; (void)rd; (void)sub;
 }
 
+// ── MMI2 ──────────────────────────────────────────────────────────────────────
+
 void EE::decodeMMI2(u32 instr) {
-    int rs=(instr>>21)&0x1F, rt=(instr>>16)&0x1F, rd=(instr>>11)&0x1F;
-    int sub=(instr>>6)&0x1F;
-    const u128& a=gpr[rs]; const u128& b=gpr[rt];
+    int rs  = (instr >> 21) & 0x1F;
+    int rt  = (instr >> 16) & 0x1F;
+    int rd  = (instr >> 11) & 0x1F;
+    int sub = (instr >>  6) & 0x1F;
 
     switch (sub) {
     case 0x00: { // PMADDW
-        i64 r0=(i64)(i32)(u32)a.lo*(i64)(i32)(u32)b.lo;
-        i64 r1=(i64)(i32)(u32)(a.hi)*(i64)(i32)(u32)(b.hi);
-        lo=(u64)(i64)(i32)(u32)(lo)+(u64)r0; hi=(u64)(i64)(i32)(u32)(hi)+(u64)r1;
-        if(rd) setGPR128(rd,u128(lo,hi)); return;
+        u128 r{};
+        for (int i = 0; i < 2; i++) {
+            u64 sh = i == 0 ? gpr[rs].lo : gpr[rs].hi;
+            u64 th = i == 0 ? gpr[rt].lo : gpr[rt].hi;
+            i64 hi_w = (i64)(i32)(u32)(sh >> 32);
+            i64 lo_w = (i64)(i32)(u32)(sh);
+            i64 hi_t = (i64)(i32)(u32)(th >> 32);
+            i64 lo_t = (i64)(i32)(u32)(th);
+            i64 prod_hi = hi_w * hi_t;
+            i64 prod_lo = lo_w * lo_t;
+            if (i == 0) {
+                i64 acc_hi = (i64)(hi << 32 | (u32)hi);
+                i64 acc_lo = (i64)(lo << 32 | (u32)lo);
+                r.hi = (u64)(prod_hi + acc_hi);
+                r.lo = (u64)(prod_lo + acc_lo);
+            }
+        }
+        if (rd) { hi = (u64)(i64)(i32)(u32)(r.lo >> 32); lo = sign_extend32((u32)r.lo); setGPR128(rd, r); }
+        return;
     }
     case 0x02: { // PSRLVW
-        u32 sh0=b.lo&0x1F, sh1=(u32)(b.lo>>32)&0x1F;
-        if(rd) setGPR128(rd,u128((u64)(u32)(a.lo>>sh0)|((u64)(u32)((u32)(a.hi)>>sh1)<<32),0)); return;
+        u128 r{};
+        u32 sh0 = gpr[rs].lo & 31, sh1 = (gpr[rs].lo >> 32) & 31;
+        r.lo = (u64)(u32)(gpr[rt].lo) >> sh0;
+        r.hi = (u64)(u32)(gpr[rt].hi) >> sh1;
+        if (rd) setGPR128(rd, r); return;
     }
     case 0x03: { // PSRAVW
-        u32 sh0=b.lo&0x1F, sh1=(u32)(b.lo>>32)&0x1F;
-        if(rd) setGPR128(rd,u128((u64)(u32)((i32)(u32)a.lo>>sh0)|((u64)(u32)((i32)(u32)(a.hi)>>sh1)<<32),0)); return;
-    }
-    case 0x04: { // PMSUBW
-        i64 r0=(i64)(i32)(u32)a.lo*(i64)(i32)(u32)b.lo;
-        i64 r1=(i64)(i32)(u32)(a.hi)*(i64)(i32)(u32)(b.hi);
-        lo=(u64)((i64)(u64)(u32)lo-r0); hi=(u64)((i64)(u64)(u32)hi-r1);
-        if(rd) setGPR128(rd,u128(lo,hi)); return;
-    }
-    case 0x08: if(rd) setGPR128(rd,u128(hi,hi1)); return; // PMFHI
-    case 0x09: if(rd) setGPR128(rd,u128(lo,lo1)); return; // PMFLO
-    case 0x0A: { // PINTH
-        u16 s0=(u16)a.lo,s1=(u16)(a.lo>>32),t0=(u16)b.lo,t1=(u16)(b.lo>>32);
-        u64 rl=(u64)t0|((u64)s0<<16)|((u64)t1<<32)|((u64)s1<<48);
-        if(rd) setGPR128(rd,u128(rl,0)); return;
-    }
-    case 0x0C: { // PMULTW
-        i64 r0=(i64)(i32)(u32)a.lo*(i64)(i32)(u32)b.lo;
-        i64 r1=(i64)(i32)(u32)(a.hi)*(i64)(i32)(u32)(b.hi);
-        lo=(u64)r0; hi=(u64)r1;
-        if(rd) setGPR128(rd,u128(lo,hi)); return;
-    }
-    case 0x0D: { // PDIVW
-        i32 d=(i32)(u32)b.lo; if(d){lo=sign_extend32((u32)((i32)(u32)a.lo/d)); hi=sign_extend32((u32)((i32)(u32)a.lo%d));} return;
-    }
-    case 0x0E: if(rd) setGPR128(rd,u128(b.lo,a.lo)); return; // PCPYLD
-    case 0x12: { // PEXEH: swap halfwords 1 and 2 of each word
-        auto do64=[](u64 v)->u64{
-            return (v&0xFFFF0000'FFFF0000uLL)|(((v&0xFFFF'0000uLL)>>16)<<0)|(((v&0xFFFFuLL)<<16));
-        };
-        if(rd) setGPR128(rd,u128(do64(b.lo),do64(b.hi))); return;
-    }
-    case 0x13: { // PREVH: reverse halfwords
-        auto do64=[](u64 v)->u64{
-            u16 h0=(v),h1=(v>>16),h2=(v>>32),h3=(v>>48);
-            return (u64)h3|((u64)h2<<16)|((u64)h1<<32)|((u64)h0<<48);
-        };
-        if(rd) setGPR128(rd,u128(do64(b.lo),do64(b.hi))); return;
-    }
-    case 0x14: { // PMULTH (multiply halfwords, pack to 32-bit results)
         u128 r{};
-        for(int i=0;i<4;i++){
-            i32 av=(i32)(i16)(a.lo>>(i*16)),bv=(i32)(i16)(b.lo>>(i*16));
-            u64 rv=(u64)(u32)(av*bv);
-            if(i<2) r.lo|=rv<<(i*32); else r.hi|=rv<<((i-2)*32);
-        }
-        if(rd) setGPR128(rd,r); return;
+        u32 sh0 = gpr[rs].lo & 31, sh1 = (gpr[rs].lo >> 32) & 31;
+        r.lo = (u64)(u32)((i32)(gpr[rt].lo) >> sh0);
+        r.hi = (u64)(u32)((i32)(gpr[rt].hi) >> sh1);
+        if (rd) setGPR128(rd, r); return;
     }
-    case 0x16: { // PEXEW: swap words 1 and 2 (lo32 ↔ lo32 of hi half)
-        if(rd) setGPR128(rd,u128((u64)(u32)(b.hi)|((u64)(u32)(b.lo>>32)<<32),(u64)(u32)(b.lo)|((u64)(u32)(b.hi>>32)<<32))); return;
+    case 0x08: { // PMFHI
+        if (rd) { gpr[rd].lo = hi; gpr[rd].hi = hi1; } return;
     }
-    case 0x17: { // PROT3W: rotate three 32-bit words
-        u32 w0=(u32)b.lo,w1=(u32)(b.lo>>32),w2=(u32)b.hi,w3=(u32)(b.hi>>32);
-        if(rd) setGPR128(rd,u128((u64)w3|((u64)w0<<32),(u64)w1|((u64)w2<<32))); return;
+    case 0x09: { // PMFLO
+        if (rd) { gpr[rd].lo = lo; gpr[rd].hi = lo1; } return;
+    }
+    case 0x0A: { // PINTH
+        if (!rd) return;
+        gpr[rd].lo = (gpr[rs].lo & 0xFFFF'0000'FFFF'0000uLL) | (gpr[rt].hi & 0x0000'FFFF'0000'FFFFuLL);
+        gpr[rd].hi = (gpr[rs].hi & 0xFFFF'0000'FFFF'0000uLL) | (gpr[rt].lo & 0x0000'FFFF'0000'FFFFuLL);
+        return;
+    }
+    case 0x0D: { // PCPYH
+        if (!rd) return;
+        u16 h = (u16)(gpr[rt].lo);
+        u64 rep = (u64)h | ((u64)h << 16) | ((u64)h << 32) | ((u64)h << 48);
+        u16 h2 = (u16)(gpr[rt].hi);
+        u64 rep2 = (u64)h2 | ((u64)h2 << 16) | ((u64)h2 << 32) | ((u64)h2 << 48);
+        gpr[rd].lo = rep; gpr[rd].hi = rep2;
+        return;
+    }
+    case 0x0E: { // PEXEH
+        if (!rd) return;
+        u64 v = gpr[rt].lo;
+        gpr[rd].lo = (v & 0xFFFF'0000'FFFF'0000uLL) | ((v >> 16) & 0xFFFF) | (((v & 0xFFFF) << 16));
+        v = gpr[rt].hi;
+        gpr[rd].hi = (v & 0xFFFF'0000'FFFF'0000uLL) | ((v >> 16) & 0xFFFF) | (((v & 0xFFFF) << 16));
+        return;
+    }
+    case 0x0F: { // PREVH
+        if (!rd) return;
+        auto rev4h = [](u64 v) -> u64 {
+            return ((v & 0xFFFF) << 48) | (((v >> 16) & 0xFFFF) << 32) |
+                   (((v >> 32) & 0xFFFF) << 16) | ((v >> 48) & 0xFFFF);
+        };
+        gpr[rd].lo = rev4h(gpr[rt].lo);
+        gpr[rd].hi = rev4h(gpr[rt].hi);
+        return;
+    }
+    case 0x10: { // PMULTW
+        if (!rd) return;
+        i64 r0 = (i64)(i32)(u32)(gpr[rs].lo) * (i64)(i32)(u32)(gpr[rt].lo);
+        i64 r1 = (i64)(i32)(u32)(gpr[rs].hi) * (i64)(i32)(u32)(gpr[rt].hi);
+        lo = sign_extend32((u32)r0); hi = sign_extend32((u32)(r0 >> 32));
+        lo1 = sign_extend32((u32)r1); hi1 = sign_extend32((u32)(r1 >> 32));
+        gpr[rd].lo = (u64)(u32)r0 | ((u64)(u32)(r0 >> 32) << 32);
+        gpr[rd].hi = (u64)(u32)r1 | ((u64)(u32)(r1 >> 32) << 32);
+        return;
+    }
+    case 0x11: { // PDIVW
+        i32 n = (i32)(u32)(gpr[rs].lo), d = (i32)(u32)(gpr[rt].lo);
+        i32 n2 = (i32)(u32)(gpr[rs].hi), d2 = (i32)(u32)(gpr[rt].hi);
+        if (d)  { lo = sign_extend32((u32)(n  / d));  hi  = sign_extend32((u32)(n  % d));  }
+        if (d2) { lo1 = sign_extend32((u32)(n2 / d2)); hi1 = sign_extend32((u32)(n2 % d2)); }
+        return;
+    }
+    case 0x13: { // PCOPYH (alias of PCPYH for lower half)
+        if (!rd) return;
+        u16 h = (u16)(gpr[rt].lo);
+        u64 rep = (u64)h | ((u64)h<<16) | ((u64)h<<32) | ((u64)h<<48);
+        gpr[rd].lo = rep; gpr[rd].hi = rep;
+        return;
+    }
+    case 0x1B: { // PCPYUD — copy upper dword to both
+        if (!rd) return;
+        gpr[rd].lo = gpr[rs].hi; gpr[rd].hi = gpr[rt].hi;
+        return;
     }
     default: break;
     }
-    (void)a; (void)b; (void)rd;
+    (void)rs; (void)rt; (void)rd; (void)sub;
 }
 
+// ── MMI3 ──────────────────────────────────────────────────────────────────────
+
 void EE::decodeMMI3(u32 instr) {
-    int rs=(instr>>21)&0x1F, rt=(instr>>16)&0x1F, rd=(instr>>11)&0x1F;
-    int sub=(instr>>6)&0x1F;
-    const u128& a=gpr[rs]; const u128& b=gpr[rt];
+    int rs  = (instr >> 21) & 0x1F;
+    int rt  = (instr >> 16) & 0x1F;
+    int rd  = (instr >> 11) & 0x1F;
+    int sub = (instr >>  6) & 0x1F;
 
     switch (sub) {
-    case 0x00: { // PMADDUW
-        u64 r0=(u64)(u32)a.lo*(u64)(u32)b.lo; u64 r1=(u64)(u32)a.hi*(u64)(u32)b.hi;
-        lo=sign_extend32((u32)lo)+(u64)r0; hi=sign_extend32((u32)hi)+(u64)r1;
-        if(rd) setGPR128(rd,u128(lo,hi)); return;
+    case 0x03: { // PAND — packed AND
+        if (rd) setGPR128(rd, gpr[rs] & gpr[rt]); return;
     }
-    case 0x08: hi  = gpr[rs].lo; hi1 = gpr[rs].hi; return; // PMTHI
-    case 0x09: lo  = gpr[rs].lo; lo1 = gpr[rs].hi; return; // PMTLO
-    case 0x0A: { // PINTEH: interleave halfwords (alternate)
-        if(rd){ u64 rl=(u64)(u16)a.lo|((u64)(u16)b.lo<<16)|((u64)(u16)(a.lo>>16)<<32)|((u64)(u16)(b.lo>>16)<<48);
-            setGPR128(rd,u128(rl,0)); } return;
+    case 0x08: { // PMTHI
+        hi  = gpr[rs].lo; hi1 = gpr[rs].hi; return;
     }
-    case 0x0C: { // PMULTUW
-        u64 r0=(u64)(u32)a.lo*(u64)(u32)b.lo; u64 r1=(u64)(u32)a.hi*(u64)(u32)b.hi;
-        lo=(u64)r0; hi=(u64)r1; if(rd) setGPR128(rd,u128(lo,hi)); return;
+    case 0x09: { // PMTLO
+        lo  = gpr[rs].lo; lo1 = gpr[rs].hi; return;
     }
-    case 0x0D: { // PDIVUW
-        u32 d=(u32)b.lo; if(d){lo=sign_extend32((u32)a.lo/d); hi=sign_extend32((u32)a.lo%d);} return;
+    case 0x0C: { // PINTEH
+        if (!rd) return;
+        gpr[rd].lo = (gpr[rs].lo & 0xFFFF'0000'FFFF'0000uLL) | (gpr[rt].lo & 0x0000'FFFF'0000'FFFFuLL);
+        gpr[rd].hi = (gpr[rs].hi & 0xFFFF'0000'FFFF'0000uLL) | (gpr[rt].hi & 0x0000'FFFF'0000'FFFFuLL);
+        return;
     }
-    case 0x0E: if(rd) setGPR128(rd,u128(b.hi,a.hi)); return; // PCPYUD
-    case 0x12: { // PEXCH: swap halfwords 1 and 3 of each doubleword
-        auto do64=[](u64 v)->u64{
-            u16 h0=v,h1=v>>16,h2=v>>32,h3=v>>48;
-            return (u64)h0|((u64)h3<<16)|((u64)h2<<32)|((u64)h1<<48);
-        };
-        if(rd) setGPR128(rd,u128(do64(b.lo),do64(b.hi))); return;
+    case 0x12: { // PEXEW
+        if (!rd) return;
+        u32 w0 = (u32)(gpr[rt].lo), w2 = (u32)(gpr[rt].hi);
+        gpr[rd].lo = (u64)w0; gpr[rd].hi = (u64)w2;
+        return;
     }
-    case 0x13: { // PCPYH: copy halfword 0 to all 4 positions in each doubleword
-        auto do64=[](u64 v)->u64{ u16 h=(u16)v; return (u64)h|((u64)h<<16)|((u64)h<<32)|((u64)h<<48); };
-        if(rd) setGPR128(rd,u128(do64(b.lo),do64(b.hi))); return;
-    }
-    case 0x16: { // PEXCW: swap words 0 and 2, 1 and 3
-        if(rd) setGPR128(rd,u128((u64)(u32)b.hi|((u64)(u32)(b.hi>>32)<<32),(u64)(u32)b.lo|((u64)(u32)(b.lo>>32)<<32))); return;
+    case 0x1B: { // PCPYLD
+        if (!rd) return;
+        gpr[rd].lo = gpr[rt].lo; gpr[rd].hi = gpr[rs].lo;
+        return;
     }
     default: break;
     }
-    (void)a; (void)b; (void)rs; (void)rt;
+    (void)rs; (void)rt; (void)rd; (void)sub;
 }

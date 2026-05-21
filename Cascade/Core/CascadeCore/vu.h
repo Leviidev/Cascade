@@ -78,8 +78,10 @@ struct VU {
         return {s, s, s, s};
     }
 
-private:
+    // Public so EE COP2 macro-mode can call it directly
     void executeUpper(u32 raw);
+
+private:
     void executeLower(u32 raw);
     void executeUpperSpecial(u32 raw);
 

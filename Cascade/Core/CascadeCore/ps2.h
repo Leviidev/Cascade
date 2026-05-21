@@ -58,13 +58,15 @@ struct PS2 {
         else         padState[pad] &= ~btn;
     }
 
-    // Save / load state (very simplified)
+    // Save / load state
     std::vector<u8> saveState() const;
     bool            loadState(const u8* data, size_t size);
 
 private:
     void wireComponents();
-    void signalVBlank();
-    void executeEEFrame(int cycles);
-    void executeIOPFrame(int cycles);
+    void signalVBlankStart();
+    void signalVBlankEnd();
+    void executeEESlice(int cycles);
+    void executeIOPSlice(int cycles);
+    void updateINTCPending();
 };

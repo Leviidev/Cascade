@@ -1,15 +1,9 @@
 #include "iop.h"
+#include "bus.h"
 #include "spu2.h"
 #include "cdvd.h"
 #include <cstdlib>
 #include <cstring>
-
-// ── A minimal CDVD forward declaration ───────────────────────────────────────
-// Full CDVD is handled in Swift; this stub satisfies the linker.
-struct CDVD {
-    u32 readIO (u32 offset) { return 0; (void)offset; }
-    void writeIO(u32 offset, u32 value) { (void)offset; (void)value; }
-};
 
 IOP::IOP() {
     ram = (u8*)calloc(IOP_RAM_SIZE, 1);

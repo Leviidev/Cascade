@@ -42,7 +42,7 @@ void VU::writeDataQ(u16 qwAddr, const vec4f& v) {
     int off = ((int)qwAddr * 16) % dataSize;
     if (off + 16 > dataSize) return;
     for (int i = 0; i < 4; i++) {
-        u32 bits; memcpy(&bits, &v[i], 4);
+        f32 comp = v[i]; u32 bits; memcpy(&bits, &comp, 4);
         write_le<u32>(dataMem + off + i * 4, bits);
     }
 }
@@ -63,7 +63,7 @@ void VU::writeData128(u32 byteOff, const vec4f& v) {
     int off = (int)(byteOff % (u32)dataSize);
     if (off + 16 > dataSize) return;
     for (int i = 0; i < 4; i++) {
-        u32 bits; memcpy(&bits, &v[i], 4);
+        f32 comp = v[i]; u32 bits; memcpy(&bits, &comp, 4);
         write_le<u32>(dataMem + off + i * 4, bits);
     }
 }

@@ -6,6 +6,7 @@ struct DMAC;
 struct INTC;
 struct EETimer;
 struct IOP;
+struct SPU2;
 
 // ── PS2 Physical Memory Map ──────────────────────────────────────────────────
 //  0x0000'0000 – 0x01FF'FFFF   EE Main RAM  (32 MB)
@@ -22,9 +23,9 @@ static constexpr u32 IOP_RAM_SIZE   =  2 * 1024 * 1024;
 static constexpr u32 SCRATCH_SIZE   = 16 * 1024;
 
 struct Bus {
-    u8* ram    = nullptr;
-    u8* bios   = nullptr;
-    u8* iopRam = nullptr;
+    u8* ram     = nullptr;
+    u8* bios    = nullptr;
+    u8* iopRam  = nullptr;
     u8* scratch = nullptr;
 
     GS*      gs    = nullptr;
@@ -32,6 +33,7 @@ struct Bus {
     INTC*    intc  = nullptr;
     EETimer* timer = nullptr;
     IOP*     iop   = nullptr;
+    SPU2*    spu2  = nullptr;
 
     Bus();
     ~Bus();
@@ -40,9 +42,10 @@ struct Bus {
 
     // Virtual → physical address translation
     static u32 toPhysical(u32 vaddr) {
-        // KSEG0 / KSEG1: mask top 3 bits
-        if ((vaddr >> 29) == 4 || (vaddr >> 29) == 5)
-            return vaddr & 0x1FFF'FFFFu;
+        u32 seg = vaddr >> 29;
+        // KSEG0 (4) and KSEG1 (5): strip top 3 bits
+        if (seg == 4 || seg == 5) return vaddr & 0x1FFF'FFFFu;
+        // KUSEG and KSEG2 pass through (or truncate to 29 bits)
         return vaddr & 0x1FFF'FFFFu;
     }
 

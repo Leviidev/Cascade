@@ -18,16 +18,14 @@ void cascade_destroy(PS2Handle h) {
 
 int cascade_load_bios(PS2Handle h, const uint8_t* data, size_t size) {
     if (!h || !data || size == 0) return 0;
-    PS2* sys = (PS2*)h;
-    return sys->loadBIOS(data, size) ? 1 : 0;
+    return ((PS2*)h)->loadBIOS(data, size) ? 1 : 0;
 }
 
 // ── Disc ──────────────────────────────────────────────────────────────────────
 
 int cascade_load_disc(PS2Handle h, const char* path) {
     if (!h || !path) return 0;
-    PS2* sys = (PS2*)h;
-    return sys->loadDisc(path) ? 1 : 0;
+    return ((PS2*)h)->loadDisc(path) ? 1 : 0;
 }
 
 void cascade_eject_disc(PS2Handle h) {
@@ -65,6 +63,10 @@ int cascade_get_framebuffer(PS2Handle h, uint8_t* out_rgba,
 int cascade_get_audio(PS2Handle h, int16_t* out, int max_pairs) {
     if (!h || !out || max_pairs <= 0) return 0;
     return ((PS2*)h)->getAudio(out, max_pairs);
+}
+
+int cascade_get_audio_sample_rate(void) {
+    return AUDIO_SAMPLE_RATE; // 44100
 }
 
 // ── Input ─────────────────────────────────────────────────────────────────────
@@ -112,4 +114,14 @@ uint32_t cascade_get_iop_pc(PS2Handle h) {
 uint64_t cascade_get_frame_count(PS2Handle h) {
     if (!h) return 0;
     return ((PS2*)h)->frameCount;
+}
+
+uint32_t cascade_get_ee_gpr(PS2Handle h, int reg) {
+    if (!h || reg < 0 || reg > 31) return 0;
+    return ((PS2*)h)->ee.getGPR32(reg);
+}
+
+uint32_t cascade_get_iop_gpr(PS2Handle h, int reg) {
+    if (!h || reg < 0 || reg > 31) return 0;
+    return ((PS2*)h)->iop.gpr[reg];
 }
