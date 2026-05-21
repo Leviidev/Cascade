@@ -145,8 +145,8 @@ public final class GraphicsSynthesizer {
                 case 0: // PACKED
                     for reg in registers {
                         guard offset < data.count else { break }
-                        let hi = data[offset]; offset += 1
-                        let lo = offset < data.count ? data[offset] : 0; offset += 1
+                        let lo = data[offset]; offset += 1
+                        let hi = offset < data.count ? data[offset] : 0; offset += 1
                         writeGSRegPacked(reg: reg, lo: lo, hi: hi)
                     }
                 case 1: // REGLIST
@@ -207,7 +207,7 @@ public final class GraphicsSynthesizer {
         switch reg {
         case 0x00: regs.prim = value
         case 0x01: regs.rgbaq = value
-        case 0x02, 0x03: regs.tex0[reg - 0x06] = value
+        case 0x02, 0x03: regs.tex0[reg - 0x02] = value
         case 0x06: regs.tex0[0] = value
         case 0x07: regs.tex0[1] = value
         case 0x18: regs.alpha[0] = value
@@ -335,10 +335,7 @@ public final class GraphicsSynthesizer {
             let al = a.a + (c.a - a.a) * alpha
             for x in Int(xL)..<Int(xR) { plotPixel(x: x, y: y, r: r, g: g, b: ba, a: al) }
         }
-        _ = beta_placeholder
     }
-    // silence unused warning
-    private var beta_placeholder: Float { 0 }
 
     private func bresenhamLine(x0: Int, y0: Int, x1: Int, y1: Int, r: Float, g: Float, b: Float, a: Float) {
         var cx = x0; var cy = y0

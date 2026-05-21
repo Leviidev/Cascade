@@ -308,15 +308,6 @@ public final class VectorInterface {
                 bytes[i*4 + 1] = UInt8((bits32 >>  8) & 0xFF)
                 bytes[i*4 + 2] = UInt8((bits32 >> 16) & 0xFF)
                 bytes[i*4 + 3] = UInt8((bits32 >> 24) & 0xFF)
-                _ = bits32
-            }
-            // Re-read to apply write-protect per-component
-            for i in 0..<4 {
-                let bits32 = writeVec[i].bitPattern
-                bytes[i*4 + 0] = UInt8((bits32 >>  0) & 0xFF)
-                bytes[i*4 + 1] = UInt8((bits32 >>  8) & 0xFF)
-                bytes[i*4 + 2] = UInt8((bits32 >> 16) & 0xFF)
-                bytes[i*4 + 3] = UInt8((bits32 >> 24) & 0xFF)
             }
             vu.writeData128Bytes(byteAddr, bytes: bytes)
 

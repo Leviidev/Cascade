@@ -81,15 +81,13 @@ public final class VectorUnit {
     // MARK: - Data Memory Access
 
     func readDataFloat(_ addr: UInt16) -> SIMD4<Float> {
-        let base = Int(addr & UInt16((dataSize / 16 - 1) * 16)) * 1
-        let off  = Int(addr) * 16 % dataSize
+        let off = Int(addr) * 16 % dataSize
         guard off + 16 <= dataMem.count else { return .zero }
         var result = SIMD4<Float>()
         for i in 0..<4 {
             let bits = dataMem.withUnsafeBytes { $0.load(fromByteOffset: off + i * 4, as: UInt32.self).littleEndian }
             result[i] = Float(bitPattern: bits)
         }
-        _ = base
         return result
     }
 

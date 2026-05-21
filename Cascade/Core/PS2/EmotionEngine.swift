@@ -813,13 +813,17 @@ public final class EmotionEngine {
     // System
     private func executeSYSCALL() {
         cop0.epc = pc &- 4   // EPC points to the SYSCALL instruction
-        cop0.triggerException(type: .syscall)
+        let vector = cop0.triggerException(type: .syscall)
+        inDelaySlot = false
+        pc = vector
     }
     private func executeSYNC() { /* memory barrier — no-op in interpreter */ }
 
     private func handleUnknownInstruction(op: UInt32, extra: UInt32 = 0) {
-        // In a real emulator, trigger a reserved instruction exception
-        cop0.triggerException(type: .reservedInstruction)
+        cop0.epc = pc &- 4
+        let vector = cop0.triggerException(type: .reservedInstruction)
+        inDelaySlot = false
+        pc = vector
     }
 }
 

@@ -115,19 +115,12 @@ public final class COP0Registers {
         index = 0x8000_0000
     }
 
-    func triggerException(type: ExceptionType) {
-        let vector: UInt32
-        if status & (1 << 22) != 0 {
-            vector = 0xBFC0_0200
-        } else if status & (1 << 1) != 0 {
-            vector = 0x8000_0180
-        } else {
-            vector = 0x8000_0180
-        }
+    @discardableResult
+    func triggerException(type: ExceptionType) -> UInt32 {
+        let vector: UInt32 = (status & (1 << 22)) != 0 ? 0xBFC0_0200 : 0x8000_0180
         cause = (cause & ~(0x1F << 2)) | (type.code << 2)
         status |= (1 << 1)
-        epc = 0
-        _ = vector
+        return vector
     }
 }
 
