@@ -419,29 +419,29 @@ public final class VectorUnit {
             setVF(fd, applyDest(destf, old: getVF(fd), new: r))
         case 0x14: // FTOI0
             let s = getVF(fs)
-            let r = SIMD4<Float>(bitPattern: SIMD4<UInt32>(
-                UInt32(bitPattern: Int32(s.x.isNaN ? 0 : max(-2147483648, min(2147483647, s.x)))),
-                UInt32(bitPattern: Int32(s.y.isNaN ? 0 : max(-2147483648, min(2147483647, s.y)))),
-                UInt32(bitPattern: Int32(s.z.isNaN ? 0 : max(-2147483648, min(2147483647, s.z)))),
-                UInt32(bitPattern: Int32(s.w.isNaN ? 0 : max(-2147483648, min(2147483647, s.w))))
+            let r = SIMD4<Float>(bitPattern: SIMD4<Int32>(
+                Int32(s.x.isNaN ? 0 : max(-2147483648, min(2147483647, s.x))),
+                Int32(s.y.isNaN ? 0 : max(-2147483648, min(2147483647, s.y))),
+                Int32(s.z.isNaN ? 0 : max(-2147483648, min(2147483647, s.z))),
+                Int32(s.w.isNaN ? 0 : max(-2147483648, min(2147483647, s.w)))
             ))
             setVF(fd, applyDest(destf, old: getVF(fd), new: r))
         case 0x15: // FTOI4
             let scale: Float = 16.0; let s = getVF(fs) * SIMD4<Float>(scale, scale, scale, scale)
-            let r = SIMD4<Float>(bitPattern: SIMD4<UInt32>(
-                UInt32(bitPattern: Int32(s.x.isNaN ? 0 : max(-2147483648, min(2147483647, s.x)))),
-                UInt32(bitPattern: Int32(s.y.isNaN ? 0 : max(-2147483648, min(2147483647, s.y)))),
-                UInt32(bitPattern: Int32(s.z.isNaN ? 0 : max(-2147483648, min(2147483647, s.z)))),
-                UInt32(bitPattern: Int32(s.w.isNaN ? 0 : max(-2147483648, min(2147483647, s.w))))
+            let r = SIMD4<Float>(bitPattern: SIMD4<Int32>(
+                Int32(s.x.isNaN ? 0 : max(-2147483648, min(2147483647, s.x))),
+                Int32(s.y.isNaN ? 0 : max(-2147483648, min(2147483647, s.y))),
+                Int32(s.z.isNaN ? 0 : max(-2147483648, min(2147483647, s.z))),
+                Int32(s.w.isNaN ? 0 : max(-2147483648, min(2147483647, s.w)))
             ))
             setVF(fd, applyDest(destf, old: getVF(fd), new: r))
         case 0x17: // FTOI15
             let scale: Float = 32768.0; let s = getVF(fs) * SIMD4<Float>(scale, scale, scale, scale)
-            let r = SIMD4<Float>(bitPattern: SIMD4<UInt32>(
-                UInt32(bitPattern: Int32(s.x.isNaN ? 0 : max(-2147483648, min(2147483647, s.x)))),
-                UInt32(bitPattern: Int32(s.y.isNaN ? 0 : max(-2147483648, min(2147483647, s.y)))),
-                UInt32(bitPattern: Int32(s.z.isNaN ? 0 : max(-2147483648, min(2147483647, s.z)))),
-                UInt32(bitPattern: Int32(s.w.isNaN ? 0 : max(-2147483648, min(2147483647, s.w))))
+            let r = SIMD4<Float>(bitPattern: SIMD4<Int32>(
+                Int32(s.x.isNaN ? 0 : max(-2147483648, min(2147483647, s.x))),
+                Int32(s.y.isNaN ? 0 : max(-2147483648, min(2147483647, s.y))),
+                Int32(s.z.isNaN ? 0 : max(-2147483648, min(2147483647, s.z))),
+                Int32(s.w.isNaN ? 0 : max(-2147483648, min(2147483647, s.w)))
             ))
             setVF(fd, applyDest(destf, old: getVF(fd), new: r))
         case 0x18: // MULAq
