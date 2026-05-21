@@ -419,30 +419,30 @@ public final class VectorUnit {
             setVF(fd, applyDest(destf, old: getVF(fd), new: r))
         case 0x14: // FTOI0
             let s = getVF(fs)
-            let r = SIMD4<Float>(bitPattern: SIMD4<Int32>(
-                Int32(s.x.isNaN ? 0 : max(-2147483648, min(2147483647, s.x))),
-                Int32(s.y.isNaN ? 0 : max(-2147483648, min(2147483647, s.y))),
-                Int32(s.z.isNaN ? 0 : max(-2147483648, min(2147483647, s.z))),
-                Int32(s.w.isNaN ? 0 : max(-2147483648, min(2147483647, s.w)))
-            ))
+            let r = SIMD4<Float>(
+                Float(bitPattern: UInt32(bitPattern: Int32(s.x.isNaN ? 0 : max(-2147483648, min(2147483647, s.x))))),
+                Float(bitPattern: UInt32(bitPattern: Int32(s.y.isNaN ? 0 : max(-2147483648, min(2147483647, s.y))))),
+                Float(bitPattern: UInt32(bitPattern: Int32(s.z.isNaN ? 0 : max(-2147483648, min(2147483647, s.z))))),
+                Float(bitPattern: UInt32(bitPattern: Int32(s.w.isNaN ? 0 : max(-2147483648, min(2147483647, s.w)))))
+            )
             setVF(fd, applyDest(destf, old: getVF(fd), new: r))
         case 0x15: // FTOI4
             let scale: Float = 16.0; let s = getVF(fs) * SIMD4<Float>(scale, scale, scale, scale)
-            let r = SIMD4<Float>(bitPattern: SIMD4<Int32>(
-                Int32(s.x.isNaN ? 0 : max(-2147483648, min(2147483647, s.x))),
-                Int32(s.y.isNaN ? 0 : max(-2147483648, min(2147483647, s.y))),
-                Int32(s.z.isNaN ? 0 : max(-2147483648, min(2147483647, s.z))),
-                Int32(s.w.isNaN ? 0 : max(-2147483648, min(2147483647, s.w)))
-            ))
+            let r = SIMD4<Float>(
+                Float(bitPattern: UInt32(bitPattern: Int32(s.x.isNaN ? 0 : max(-2147483648, min(2147483647, s.x))))),
+                Float(bitPattern: UInt32(bitPattern: Int32(s.y.isNaN ? 0 : max(-2147483648, min(2147483647, s.y))))),
+                Float(bitPattern: UInt32(bitPattern: Int32(s.z.isNaN ? 0 : max(-2147483648, min(2147483647, s.z))))),
+                Float(bitPattern: UInt32(bitPattern: Int32(s.w.isNaN ? 0 : max(-2147483648, min(2147483647, s.w)))))
+            )
             setVF(fd, applyDest(destf, old: getVF(fd), new: r))
         case 0x17: // FTOI15
             let scale: Float = 32768.0; let s = getVF(fs) * SIMD4<Float>(scale, scale, scale, scale)
-            let r = SIMD4<Float>(bitPattern: SIMD4<Int32>(
-                Int32(s.x.isNaN ? 0 : max(-2147483648, min(2147483647, s.x))),
-                Int32(s.y.isNaN ? 0 : max(-2147483648, min(2147483647, s.y))),
-                Int32(s.z.isNaN ? 0 : max(-2147483648, min(2147483647, s.z))),
-                Int32(s.w.isNaN ? 0 : max(-2147483648, min(2147483647, s.w)))
-            ))
+            let r = SIMD4<Float>(
+                Float(bitPattern: UInt32(bitPattern: Int32(s.x.isNaN ? 0 : max(-2147483648, min(2147483647, s.x))))),
+                Float(bitPattern: UInt32(bitPattern: Int32(s.y.isNaN ? 0 : max(-2147483648, min(2147483647, s.y))))),
+                Float(bitPattern: UInt32(bitPattern: Int32(s.z.isNaN ? 0 : max(-2147483648, min(2147483647, s.z))))),
+                Float(bitPattern: UInt32(bitPattern: Int32(s.w.isNaN ? 0 : max(-2147483648, min(2147483647, s.w)))))
+            )
             setVF(fd, applyDest(destf, old: getVF(fd), new: r))
         case 0x18: // MULAq
             acc = applyDest(destf, old: acc, new: getVF(fs) * SIMD4<Float>(q, q, q, q))
@@ -616,14 +616,14 @@ public final class VectorUnit {
             break
         // RINIT / RGET / RNEXT / RXOR / WAITP (opcode 0x40–0x44)
         case 0x40: // RINIT
-            r = UInt32(bitPattern: getVF(fs).x.bitPattern)
+            r = getVF(fs).x.bitPattern
         case 0x41: // RGET
             setVF(ft, applyDest(dest, old: getVF(ft), new: SIMD4<Float>(Float(bitPattern: r), Float(bitPattern: r), Float(bitPattern: r), Float(bitPattern: r))))
         case 0x42: // RNEXT — advance PRNG, then read
             r = ((r >> 4) ^ (r >> 22) ^ r) & 0x007F_FFFF | 0x3F80_0000
             setVF(ft, applyDest(dest, old: getVF(ft), new: SIMD4<Float>(Float(bitPattern: r), Float(bitPattern: r), Float(bitPattern: r), Float(bitPattern: r))))
         case 0x43: // RXOR
-            r ^= UInt32(bitPattern: getVF(fs).x.bitPattern) & 0x007F_FFFF
+            r ^= getVF(fs).x.bitPattern & 0x007F_FFFF
         case 0x44: // WAITP — stall until EFU ready (no-op)
             break
         // EFU operations (opcode 0x60–0x7F)
